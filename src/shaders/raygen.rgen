@@ -1,0 +1,54 @@
+#version 460
+#extension GL_KHR_vulkan_glsl : enable // Vulkan-specific syntax
+#extension GL_GOOGLE_include_directive : enable // Include files
+#extension GL_EXT_ray_tracing : enable // Raytracing
+
+// Include structs and bindings
+
+#include "../../hsk_rt_rpf/src/shaders/rt_common/bindpoints.glsl"
+#include "../../hsk_rt_rpf/src/shaders/common/camera.glsl"
+#include "../../hsk_rt_rpf/src/shaders/rt_common/tlas.glsl"
+#include "../../hsk_rt_rpf/src/shaders/rt_common/imageoutput.glsl"
+#include "../../hsk_rt_rpf/src/shaders/common/lcrng.glsl"
+#include "../../hsk_rt_rpf/src/shaders/common/noisetex.glsl"
+#include "../../hsk_rt_rpf/src/shaders/rt_common/tracerconfig.glsl"
+
+// Declare hitpayloads
+
+#define HITPAYLOAD_OUT
+#include "../../hsk_rt_rpf/src/shaders/rt_common/payload.glsl"
+
+void main() 
+{
+	const vec2 pixelCenter = vec2(gl_LaunchIDEXT.xy) + vec2(0.5);
+	const vec2 inUV = pixelCenter/vec2(gl_LaunchSizeEXT.xy);
+	vec2 d = inUV * 2.0 - 1.0;
+
+	vec4 origin = Camera.InverseViewMatrix * vec4(0,0,0,1);
+	vec4 target = Camera.InverseProjectionMatrix * vec4(d.x, d.y, 1, 1) ;
+	vec4 direction = Camera.InverseViewMatrix*vec4(normalize(target.xyz), 0) ;
+
+	float tmin = 0.001;
+	float tmax = 10000.0;
+
+    ChildPayload = ConstructHitPayload();
+
+	ivec2 texSize = textureSize(NoiseSource, 0);
+
+	ivec2 texel = ivec2(gl_LaunchIDEXT.x % texSize.x, gl_LaunchIDEXT.y % texSize.y);
+
+	uint left = TracerConfig.RngSeed;
+	uint right = texelFetch(NoiseSource, texel, 0).x;
+	for (int i = 0; i < 4; i++)
+	{
+		uint temp = left & 0xFFFF | (right << 16);
+		temp = lcgUint(temp) * lcgUint(temp);
+		right += left;
+		left += temp;
+	}
+	ChildPayload.Seed = left + right;
+
+    traceRayEXT(MainTlas, 0, 0xff, 0, 0, 0, origin.xyz, tmin, direction.xyz, tmax, 0);
+
+	imageStore(ImageOutput, ivec2(gl_LaunchIDEXT.xy), vec4(ChildPayload.Radiance, 1.0));
+}

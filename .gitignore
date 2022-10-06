@@ -1,0 +1,13 @@
+# ide files
+.vscode/
+.vs/
+
+# generated output
+out/
+build/
+logs/
+*.spv
+*cmakegenerated*
+
+# data
+glTF-Sample-Models/*

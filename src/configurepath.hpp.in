@@ -1,0 +1,5 @@
+#pragma once
+
+// TODO: Windows Unicode Support (via wstring or u8string)
+
+#define CWD_OVERRIDE_PATH "${CMAKE_CURRENT_SOURCE_DIR}"
