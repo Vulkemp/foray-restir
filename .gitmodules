@@ -1,0 +1,3 @@
+[submodule "hsk_rt_rpf"]
+	path = hsk_rt_rpf
+	url = https://github.com/Vulkemp/hsk_rt_rpf
