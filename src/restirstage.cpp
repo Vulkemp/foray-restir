@@ -1,4 +1,5 @@
 #include "restirstage.hpp"
+#include <utility/hsk_shadermanager.hpp>
 
 namespace hsk {
     void RestirStage::Init(const VkContext* context, Scene* scene, ManagedImage* envmap, ManagedImage* noiseSource)
@@ -33,18 +34,13 @@ namespace hsk {
 
         mRestirConfigurationBufferInfos.resize(1);
 
-        mDescriptorSet.Create(context, "RestirDescriporSet");
-        mDescriptorSet.SetDescriptorInfoAt(0, MakeDescriptorInfos_RestirConfigurationUbo(VkShaderStageFlagBits::VK_SHADER_STAGE_RAYGEN_BIT_KHR));
-        mDescriptorSet.SetDescriptorInfoAt(1, MakeDescriptorInfos_StorageBufferReadSource(VkShaderStageFlagBits::VK_SHADER_STAGE_RAYGEN_BIT_KHR));
-        mDescriptorSet.SetDescriptorInfoAt(1, MakeDescriptorInfos_StorageBufferWriteTarget(VkShaderStageFlagBits::VK_SHADER_STAGE_RAYGEN_BIT_KHR));
-
         Extent2D     windowSize    = mContext->ContextSwapchain.Window.Size();
         VkDeviceSize reservoirSize = sizeof(Reservoir);
         VkDeviceSize bufferSize    = windowSize.Width * windowSize.Height * reservoirSize * restirConfig.ReservoirSize;
         for(size_t i = 0; i < mRestirStorageBuffers.size(); i++)
         {
-            mBufferInfos_StorageBufferRead[i].resize(mRestirStorageBuffers.size());
-            mBufferInfos_StorageBufferWrite[i].resize(mRestirStorageBuffers.size());
+            mBufferInfos_StorageBufferRead[i].resize(1);
+            mBufferInfos_StorageBufferWrite[i].resize(1);
             mRestirStorageBuffers[i].Create(mContext, VkBufferUsageFlagBits::VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, bufferSize, VMA_MEMORY_USAGE_AUTO_PREFER_HOST, 0,
                                             std::string("RestirStorageBuffer#") + std::to_string(i));
         }
@@ -67,13 +63,21 @@ namespace hsk {
 
     void RestirStage::OnShadersRecompiled(ShaderCompiler* shaderCompiler)
     {
-        bool rebuild = shaderCompiler->HasShaderBeenRecompiled(mRaygen.Path) || shaderCompiler->HasShaderBeenRecompiled(mDefault_AnyHit.Path)
-                       || shaderCompiler->HasShaderBeenRecompiled(mDefault_ClosestHit.Path) || shaderCompiler->HasShaderBeenRecompiled(mDefault_Miss.Path);
+        bool rebuild = ShaderManager::Instance().HasShaderBeenRecompiled(mRaygen.Path) || ShaderManager::Instance().HasShaderBeenRecompiled(mDefault_AnyHit.Path)
+                       || ShaderManager::Instance().HasShaderBeenRecompiled(mDefault_ClosestHit.Path) || ShaderManager::Instance().HasShaderBeenRecompiled(mDefault_Miss.Path);
         if(rebuild)
         {
             ReloadShaders();
         }
     }
+
+    void RestirStage::SetupDescriptors() {
+        RaytracingStage::SetupDescriptors();
+        mDescriptorSet.SetDescriptorInfoAt(11, MakeDescriptorInfos_RestirConfigurationUbo(VkShaderStageFlagBits::VK_SHADER_STAGE_RAYGEN_BIT_KHR));
+        mDescriptorSet.SetDescriptorInfoAt(12, MakeDescriptorInfos_StorageBufferReadSource(VkShaderStageFlagBits::VK_SHADER_STAGE_RAYGEN_BIT_KHR));
+        mDescriptorSet.SetDescriptorInfoAt(13, MakeDescriptorInfos_StorageBufferWriteTarget(VkShaderStageFlagBits::VK_SHADER_STAGE_RAYGEN_BIT_KHR));
+    }
+
     void RestirStage::Destroy()
     {
         RaytracingStage::Destroy();
@@ -89,7 +93,7 @@ namespace hsk {
 
     void RestirStage::RtStageShader::Create(const VkContext* context)
     {
-        Module.LoadFromSpirv(context, Path);
+        Module.LoadFromSource(context, Path);
     }
     void RestirStage::RtStageShader::Destroy()
     {

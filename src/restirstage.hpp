@@ -37,6 +37,8 @@ namespace hsk {
         virtual void CreateRaytraycingPipeline() override;
         virtual void OnShadersRecompiled(ShaderCompiler* shaderCompiler) override;
 
+        virtual void SetupDescriptors() override;
+
         virtual void Destroy() override;
         virtual void DestroyShaders() override;
 
@@ -50,10 +52,10 @@ namespace hsk {
         };
 
       protected:
-        RtStageShader mRaygen{"shaders/raygen.rgen.spv"};
-        RtStageShader mDefault_AnyHit{"shaders/ray-default/anyhit.rahit.spv"};
-        RtStageShader mDefault_ClosestHit{"shaders/ray-default/closesthit.rchit.spv"};
-        RtStageShader mDefault_Miss{"shaders/ray-default/miss.rmiss.spv"};
+        RtStageShader mRaygen{"shaders/raygen.rgen"};
+        RtStageShader mDefault_AnyHit{"shaders/ray-default/anyhit.rahit"};
+        RtStageShader mDefault_ClosestHit{"shaders/ray-default/closesthit.rchit"};
+        RtStageShader mDefault_Miss{"shaders/ray-default/miss.rmiss"};
 
         std::array<hsk::ManagedBuffer, 2>                  mRestirStorageBuffers;
         std::array<std::vector<VkDescriptorBufferInfo>, 2> mBufferInfos_StorageBufferRead;
