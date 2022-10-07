@@ -120,7 +120,7 @@ void RestirProject::Destroy()
 	mScene = nullptr;
 	mGbufferStage.Destroy();
 	mImguiStage.Destroy();
-	mRaytraycingStage.Destroy();
+	mRestirStage.Destroy();
 	mSphericalEnvMap.Destroy();
 
 	DefaultAppBase::Destroy();
@@ -129,7 +129,7 @@ void RestirProject::Destroy()
 void RestirProject::OnShadersRecompiled(hsk::ShaderCompiler *shaderCompiler)
 {
 	mGbufferStage.OnShadersRecompiled(shaderCompiler);
-	mRaytraycingStage.OnShadersRecompiled(shaderCompiler);
+	mRestirStage.OnShadersRecompiled(shaderCompiler);
 }
 
 void RestirProject::PrepareImguiWindow()
@@ -177,8 +177,8 @@ void RestirProject::ConfigureStages()
 	auto albedoImage = mGbufferStage.GetColorAttachmentByName(hsk::GBufferStage::Albedo);
 	auto normalImage = mGbufferStage.GetColorAttachmentByName(hsk::GBufferStage::WorldspaceNormal);
 
-	mRaytraycingStage.Init(&mContext, mScene.get(), &mSphericalEnvMap, &mNoiseSource.GetImage());
-	auto rtImage = mRaytraycingStage.GetColorAttachmentByName(hsk::RaytracingStage::RaytracingRenderTargetName);
+	mRestirStage.Init(&mContext, mScene.get(), &mSphericalEnvMap, &mNoiseSource.GetImage());
+	auto rtImage = mRestirStage.GetColorAttachmentByName(hsk::RaytracingStage::RaytracingRenderTargetName);
 
 	UpdateOutputs();
 
@@ -194,7 +194,7 @@ void RestirProject::RecordCommandBuffer(hsk::FrameRenderInfo &renderInfo)
 	mScene->Update(renderInfo);
 	mGbufferStage.RecordFrame(renderInfo);
 
-	mRaytraycingStage.RecordFrame(renderInfo);
+	mRestirStage.RecordFrame(renderInfo);
 
 	// draw imgui windows
 	mImguiStage.RecordFrame(renderInfo);
@@ -217,8 +217,8 @@ void RestirProject::OnResized(VkExtent2D size)
 	mGbufferStage.OnResized(size);
 	auto albedoImage = mGbufferStage.GetColorAttachmentByName(hsk::GBufferStage::Albedo);
 	auto normalImage = mGbufferStage.GetColorAttachmentByName(hsk::GBufferStage::WorldspaceNormal);
-	mRaytraycingStage.OnResized(size);
-	auto rtImage = mRaytraycingStage.GetColorAttachmentByName(hsk::RaytracingStage::RaytracingRenderTargetName);
+	mRestirStage.OnResized(size);
+	auto rtImage = mRestirStage.GetColorAttachmentByName(hsk::RaytracingStage::RaytracingRenderTargetName);
 
 	UpdateOutputs();
 
@@ -240,7 +240,7 @@ void RestirProject::UpdateOutputs()
 	lUpdateOutput(mOutputs, mGbufferStage, hsk::GBufferStage::MotionVector);
 	lUpdateOutput(mOutputs, mGbufferStage, hsk::GBufferStage::MaterialIndex);
 	lUpdateOutput(mOutputs, mGbufferStage, hsk::GBufferStage::MeshInstanceIndex);
-	lUpdateOutput(mOutputs, mRaytraycingStage, hsk::RaytracingStage::RaytracingRenderTargetName);
+	lUpdateOutput(mOutputs, mRestirStage, hsk::RaytracingStage::RaytracingRenderTargetName);
 
 	if (mCurrentOutput.size() == 0 || !mOutputs.contains(mCurrentOutput))
 	{
