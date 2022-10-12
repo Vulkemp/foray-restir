@@ -1,8 +1,8 @@
 #include "restirstage.hpp"
-#include <utility/foray_shadermanager.hpp>
+#include <core/foray_shadermanager.hpp>
 
 namespace foray {
-    void RestirStage::Init(const VkContext* context, Scene* scene, ManagedImage* envmap, ManagedImage* noiseSource)
+    void RestirStage::Init(const foray::core::VkContext* context, foray::scene::Scene* scene, foray::core::ManagedImage* envmap, foray::core::ManagedImage* noiseSource)
     {
         mContext = context;
         mScene   = scene;
@@ -61,17 +61,20 @@ namespace foray {
         RaytracingStage::CreateRaytraycingPipeline();
     }
 
-    void RestirStage::OnShadersRecompiled(ShaderCompiler* shaderCompiler)
+    void RestirStage::OnShadersRecompiled()
     {
-        bool rebuild = ShaderManager::Instance().HasShaderBeenRecompiled(mRaygen.Path) || ShaderManager::Instance().HasShaderBeenRecompiled(mDefault_AnyHit.Path)
-                       || ShaderManager::Instance().HasShaderBeenRecompiled(mDefault_ClosestHit.Path) || ShaderManager::Instance().HasShaderBeenRecompiled(mDefault_Miss.Path);
+        bool rebuild = foray::core::ShaderManager::Instance().HasShaderBeenRecompiled(mRaygen.Path)
+                       || foray::core::ShaderManager::Instance().HasShaderBeenRecompiled(mDefault_AnyHit.Path)
+                       || foray::core::ShaderManager::Instance().HasShaderBeenRecompiled(mDefault_ClosestHit.Path)
+                       || foray::core::ShaderManager::Instance().HasShaderBeenRecompiled(mDefault_Miss.Path);
         if(rebuild)
         {
             ReloadShaders();
         }
     }
 
-    void RestirStage::SetupDescriptors() {
+    void RestirStage::SetupDescriptors()
+    {
         RaytracingStage::SetupDescriptors();
         mDescriptorSet.SetDescriptorInfoAt(11, MakeDescriptorInfos_RestirConfigurationUbo(VkShaderStageFlagBits::VK_SHADER_STAGE_RAYGEN_BIT_KHR));
         mDescriptorSet.SetDescriptorInfoAt(12, MakeDescriptorInfos_StorageBufferReadSource(VkShaderStageFlagBits::VK_SHADER_STAGE_RAYGEN_BIT_KHR));
@@ -91,7 +94,7 @@ namespace foray {
         mDefault_Miss.Destroy();
     }
 
-    void RestirStage::RtStageShader::Create(const VkContext* context)
+    void RestirStage::RtStageShader::Create(const foray::core::VkContext* context)
     {
         Module.LoadFromSource(context, Path);
     }
@@ -100,18 +103,18 @@ namespace foray {
         Module.Destroy();
     }
 
-    std::shared_ptr<DescriptorSetHelper::DescriptorInfo> RestirStage::MakeDescriptorInfos_RestirConfigurationUbo(VkShaderStageFlags shaderStage)
+    std::shared_ptr<foray::core::DescriptorSetHelper::DescriptorInfo> RestirStage::MakeDescriptorInfos_RestirConfigurationUbo(VkShaderStageFlags shaderStage)
     {
         mRestirConfigurationUbo.GetUboBuffer().GetDeviceBuffer().FillVkDescriptorBufferInfo(&mRestirConfigurationBufferInfos[0]);
-        auto descriptorInfo = std::make_shared<DescriptorSetHelper::DescriptorInfo>();
+        auto descriptorInfo = std::make_shared<foray::core::DescriptorSetHelper::DescriptorInfo>();
         descriptorInfo->Init(VkDescriptorType::VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, shaderStage);
         descriptorInfo->AddDescriptorSet(&mRestirConfigurationBufferInfos);
         return descriptorInfo;
     }
 
-    std::shared_ptr<DescriptorSetHelper::DescriptorInfo> RestirStage::MakeDescriptorInfos_StorageBufferReadSource(VkShaderStageFlags shaderStage)
+    std::shared_ptr<foray::core::DescriptorSetHelper::DescriptorInfo> RestirStage::MakeDescriptorInfos_StorageBufferReadSource(VkShaderStageFlags shaderStage)
     {
-        auto descriptorInfo = std::make_shared<DescriptorSetHelper::DescriptorInfo>();
+        auto descriptorInfo = std::make_shared<foray::core::DescriptorSetHelper::DescriptorInfo>();
         descriptorInfo->Init(VkDescriptorType::VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, shaderStage);
 
         uint32_t firstDescriptorSetIndex  = 0;
@@ -126,9 +129,9 @@ namespace foray {
         return descriptorInfo;
     }
 
-    std::shared_ptr<DescriptorSetHelper::DescriptorInfo> RestirStage::MakeDescriptorInfos_StorageBufferWriteTarget(VkShaderStageFlags shaderStage)
+    std::shared_ptr<foray::core::DescriptorSetHelper::DescriptorInfo> RestirStage::MakeDescriptorInfos_StorageBufferWriteTarget(VkShaderStageFlags shaderStage)
     {
-        auto descriptorInfo = std::make_shared<DescriptorSetHelper::DescriptorInfo>();
+        auto descriptorInfo = std::make_shared<foray::core::DescriptorSetHelper::DescriptorInfo>();
         descriptorInfo->Init(VkDescriptorType::VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, shaderStage);
 
         uint32_t firstDescriptorSetIndex  = 0;

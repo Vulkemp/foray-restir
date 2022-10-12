@@ -5,13 +5,13 @@
 - **Vulkan SDK 1.2+** Follow install instructions on [https://vulkan.lunarg.com/sdk/home](https://vulkan.lunarg.com/sdk/home)
 - **SDL2 Dev Libraries**
     - Linux: Install package `libsdl2-dev`
-    - Windows: `foray_rt_rpf` repository contains headers and windows libraries of SDL 2.0.20. No further setup is required.
+    - Windows: `foray` repository contains headers and windows libraries of SDL 2.0.20. No further setup is required.
 
 ## Cloning
 
 Requires a submodule (`--recursive` clone option or run `submodule init` after cloning)
 ```
-git clone --recursive https://github.com/Vulkemp/foray_rt_rpf_sponza_sample
+git clone --recursive https://github.com/Vulkemp/foray_sponza_sample
 ```
 
 ## Download Intels scene sponza sample
@@ -22,7 +22,7 @@ You can manually download the files or run the download_sponza.py. Note that the
 The folder structure of the extracted sponza files should be according to this schema:
 
 ```
-foray_rt_rpf_sponza_sample
+foray_sponza_sample
 │   README.md 
 |   download_sponza.py
 │   ...

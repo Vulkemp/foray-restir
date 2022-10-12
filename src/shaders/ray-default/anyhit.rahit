@@ -6,19 +6,19 @@
 
 // Include structs and bindings
 
-#include "../../../foray_rt_rpf/src/shaders/rt_common/bindpoints.glsl" // Bindpoints (= descriptor set layout)
-#include "../../../foray_rt_rpf/src/shaders/rt_common/tlas.glsl"
-#include "../../../foray_rt_rpf/src/shaders/common/materialbuffer.glsl" // Material buffer for material information and texture array
-#include "../../../foray_rt_rpf/src/shaders/rt_common/geometrymetabuffer.glsl" // GeometryMeta information
-#include "../../../foray_rt_rpf/src/shaders/rt_common/geobuffers.glsl" // Vertex and index buffer aswell as accessor methods
-#include "../../../foray_rt_rpf/src/shaders/common/normaltbn.glsl" // Normal calculation in tangent space
-#include "../../../foray_rt_rpf/src/shaders/pbr/specularbrdf.glsl"
+#include "../../../foray/src/shaders/rt_common/bindpoints.glsl" // Bindpoints (= descriptor set layout)
+#include "../../../foray/src/shaders/rt_common/tlas.glsl"
+#include "../../../foray/src/shaders/common/materialbuffer.glsl" // Material buffer for material information and texture array
+#include "../../../foray/src/shaders/rt_common/geometrymetabuffer.glsl" // GeometryMeta information
+#include "../../../foray/src/shaders/rt_common/geobuffers.glsl" // Vertex and index buffer aswell as accessor methods
+#include "../../../foray/src/shaders/common/normaltbn.glsl" // Normal calculation in tangent space
+#include "../../../foray/src/shaders/pbr/specularbrdf.glsl"
 
 // Declare hitpayloads
 
 #define HITPAYLOAD_IN // Declare hitpayload returned to the ray generation source resulting in the invocation of this closesthit shader instance
 #define HITPAYLOAD_OUT // Declare hitpayload passed to hit/miss shaders of any child shaders
-#include "../../../foray_rt_rpf/src/shaders/rt_common/payload.glsl"
+#include "../../../foray/src/shaders/rt_common/payload.glsl"
 
 hitAttributeEXT vec2 attribs; // Barycentric coordinates
 

@@ -23,7 +23,7 @@ find_package(Vulkan REQUIRED)
 
 target_link_libraries(
 	${PROJECT_NAME}
-	PUBLIC rtrpf
+	PUBLIC foray
 )
 
 if (WIN32)
@@ -35,8 +35,8 @@ endif()
 
 target_include_directories(
 	${PROJECT_NAME}
-	PUBLIC "../foray_rt_rpf/src"
-	PUBLIC "../foray_rt_rpf/third_party"
+	PUBLIC "../foray/src"
+	PUBLIC "../foray/third_party"
 	PUBLIC ${Vulkan_INCLUDE_DIRS}
 )
 

@@ -1,13 +1,13 @@
 #include "restir_app.hpp"
-#include <gltfconvert/foray_modelconverter.hpp>
-#include <scenegraph/components/foray_camera.hpp>
-#include <scenegraph/globalcomponents/foray_cameramanager.hpp>
-#include <scenegraph/globalcomponents/foray_tlasmanager.hpp>
-#include <scenegraph/components/foray_freecameracontroller.hpp>
+#include <gltf/foray_modelconverter.hpp>
+#include <scene/components/foray_camera.hpp>
+#include <scene/globalcomponents/foray_cameramanager.hpp>
+#include <scene/globalcomponents/foray_tlasmanager.hpp>
+#include <scene/components/foray_freecameracontroller.hpp>
 #include <imgui/imgui.h>
-#include <memory/foray_managedimage.hpp>
+#include <core/foray_managedimage.hpp>
 #include <vulkan/vulkan.h>
-#include <utility/foray_imageloader.hpp>
+#include <util/foray_imageloader.hpp>
 #include <bench/foray_hostbenchmark.hpp>
 
 void RestirProject::Init()
@@ -48,22 +48,22 @@ void RestirProject::OnEvent(const foray::Event *event)
 void RestirProject::loadScene()
 {
 	std::vector<std::string> scenePaths({
-		"../Sponza/glTF/Sponza.gltf",
+		"../data/scenes/Sponza/glTF/Sponza.gltf",
 	});
 
-	mScene = std::make_unique<foray::Scene>(&mContext);
-	foray::ModelConverter converter(mScene.get());
+	mScene = std::make_unique<foray::scene::Scene>(&mContext);
+	foray::gltf::ModelConverter converter(mScene.get());
 	for (const auto &path : scenePaths)
 	{
-		converter.LoadGltfModel(foray::MakeRelativePath(path));
+		converter.LoadGltfModel(foray::osi::MakeRelativePath(path));
 	}
-	mScene->MakeComponent<foray::TlasManager>(&mContext)->CreateOrUpdate();
+	mScene->MakeComponent<foray::scene::TlasManager>(&mContext)->CreateOrUpdate();
 
 	auto cameraNode = mScene->MakeNode();
 
-	cameraNode->MakeComponent<foray::Camera>()->InitDefault();
-	cameraNode->MakeComponent<foray::FreeCameraController>();
-	mScene->GetComponent<foray::CameraManager>()->RefreshCameraList();
+	cameraNode->MakeComponent<foray::scene::Camera>()->InitDefault();
+	cameraNode->MakeComponent<foray::scene::FreeCameraController>();
+	mScene->GetComponent<foray::scene::CameraManager>()->RefreshCameraList();
 
 	for (int32_t i = 0; i < scenePaths.size(); i++)
 	{
@@ -77,9 +77,9 @@ void RestirProject::LoadEnvironmentMap()
 {
 
 	constexpr VkFormat hdrVkFormat = VK_FORMAT_R32G32B32A32_SFLOAT;
-	foray::ImageLoader<hdrVkFormat> imageLoader;
+	foray::util::ImageLoader<hdrVkFormat> imageLoader;
 	// env maps at https://polyhaven.com/a/alps_field
-	std::string pathToEnvMap = std::string(foray::CurrentWorkingDirectory()) + "/../data/textures/envmap.exr";
+    std::string pathToEnvMap = std::string(foray::osi::CurrentWorkingDirectory()) + "/../data/textures/envmap.exr";
 	if (!imageLoader.Init(pathToEnvMap))
 	{
 		foray::logger()->warn("Loading env map failed \"{}\"", pathToEnvMap);
@@ -97,7 +97,7 @@ void RestirProject::LoadEnvironmentMap()
 		.depth = 1,
 	};
 
-	foray::ManagedImage::CreateInfo ci("Environment map", VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, hdrVkFormat, ext3D);
+	foray::core::ManagedImage::CreateInfo ci("Environment map", VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, hdrVkFormat, ext3D);
 
 	imageLoader.InitManagedImage(&mContext, &mSphericalEnvMap, ci);
 	imageLoader.Destroy();
@@ -105,7 +105,7 @@ void RestirProject::LoadEnvironmentMap()
 
 void RestirProject::GenerateNoiseSource()
 {
-	foray::HostBenchmark bench;
+	foray::bench::HostBenchmark bench;
 	bench.Begin();
 	mNoiseSource.Create(&mContext);
 	bench.End();
@@ -126,10 +126,10 @@ void RestirProject::Destroy()
 	DefaultAppBase::Destroy();
 }
 
-void RestirProject::OnShadersRecompiled(foray::ShaderCompiler *shaderCompiler)
+void RestirProject::OnShadersRecompiled()
 {
-	mGbufferStage.OnShadersRecompiled(shaderCompiler);
-	mRestirStage.OnShadersRecompiled(shaderCompiler);
+	mGbufferStage.OnShadersRecompiled();
+	mRestirStage.OnShadersRecompiled();
 }
 
 void RestirProject::PrepareImguiWindow()
@@ -174,11 +174,11 @@ void RestirProject::PrepareImguiWindow()
 void RestirProject::ConfigureStages()
 {
 	mGbufferStage.Init(&mContext, mScene.get());
-	auto albedoImage = mGbufferStage.GetColorAttachmentByName(foray::GBufferStage::Albedo);
-	auto normalImage = mGbufferStage.GetColorAttachmentByName(foray::GBufferStage::WorldspaceNormal);
+	auto albedoImage = mGbufferStage.GetColorAttachmentByName(foray::stages::GBufferStage::Albedo);
+	auto normalImage = mGbufferStage.GetColorAttachmentByName(foray::stages::GBufferStage::WorldspaceNormal);
 
 	mRestirStage.Init(&mContext, mScene.get(), &mSphericalEnvMap, &mNoiseSource.GetImage());
-	auto rtImage = mRestirStage.GetColorAttachmentByName(foray::RaytracingStage::RaytracingRenderTargetName);
+	auto rtImage = mRestirStage.GetColorAttachmentByName(foray::stages::RaytracingStage::RaytracingRenderTargetName);
 
 	UpdateOutputs();
 
@@ -186,10 +186,13 @@ void RestirProject::ConfigureStages()
 	PrepareImguiWindow();
 
 	// �nit copy stage
-	mImageToSwapchainStage.Init(&mContext, mOutputs[mCurrentOutput], foray::ImageToSwapchainStage::PostCopy{.AccessFlags = (VkAccessFlagBits::VK_ACCESS_SHADER_WRITE_BIT), .ImageLayout = (VkImageLayout::VK_IMAGE_LAYOUT_GENERAL), .QueueFamilyIndex = (mContext.QueueGraphics)});
+    mImageToSwapchainStage.Init(&mContext, mOutputs[mCurrentOutput],
+                                foray::stages::ImageToSwapchainStage::PostCopy{.AccessFlags      = (VkAccessFlagBits::VK_ACCESS_SHADER_WRITE_BIT),
+                                                                             .ImageLayout      = (VkImageLayout::VK_IMAGE_LAYOUT_GENERAL),
+                                                                             .QueueFamilyIndex = (mContext.QueueGraphics)});
 }
 
-void RestirProject::RecordCommandBuffer(foray::FrameRenderInfo &renderInfo)
+void RestirProject::RecordCommandBuffer(foray::base::FrameRenderInfo &renderInfo)
 {
 	mScene->Update(renderInfo);
 	mGbufferStage.RecordFrame(renderInfo);
@@ -215,10 +218,10 @@ void RestirProject::OnResized(VkExtent2D size)
 {
 	mScene->InvokeOnResized(size);
 	mGbufferStage.OnResized(size);
-	auto albedoImage = mGbufferStage.GetColorAttachmentByName(foray::GBufferStage::Albedo);
-	auto normalImage = mGbufferStage.GetColorAttachmentByName(foray::GBufferStage::WorldspaceNormal);
+    auto albedoImage = mGbufferStage.GetColorAttachmentByName(foray::stages::GBufferStage::Albedo);
+    auto normalImage = mGbufferStage.GetColorAttachmentByName(foray::stages::GBufferStage::WorldspaceNormal);
 	mRestirStage.OnResized(size);
-	auto rtImage = mRestirStage.GetColorAttachmentByName(foray::RaytracingStage::RaytracingRenderTargetName);
+    auto rtImage = mRestirStage.GetColorAttachmentByName(foray::stages::RaytracingStage::RaytracingRenderTargetName);
 
 	UpdateOutputs();
 
@@ -226,7 +229,7 @@ void RestirProject::OnResized(VkExtent2D size)
 	mImageToSwapchainStage.OnResized(size, mOutputs[mCurrentOutput]);
 }
 
-void lUpdateOutput(std::unordered_map<std::string_view, foray::ManagedImage *> &map, foray::RenderStage &stage, const std::string_view name)
+void lUpdateOutput(std::unordered_map<std::string_view, foray::core::ManagedImage*>& map, foray::stages::RenderStage& stage, const std::string_view name)
 {
 	map[name] = stage.GetColorAttachmentByName(name);
 }
@@ -234,13 +237,13 @@ void lUpdateOutput(std::unordered_map<std::string_view, foray::ManagedImage *> &
 void RestirProject::UpdateOutputs()
 {
 	mOutputs.clear();
-	lUpdateOutput(mOutputs, mGbufferStage, foray::GBufferStage::Albedo);
-	lUpdateOutput(mOutputs, mGbufferStage, foray::GBufferStage::WorldspacePosition);
-	lUpdateOutput(mOutputs, mGbufferStage, foray::GBufferStage::WorldspaceNormal);
-	lUpdateOutput(mOutputs, mGbufferStage, foray::GBufferStage::MotionVector);
-	lUpdateOutput(mOutputs, mGbufferStage, foray::GBufferStage::MaterialIndex);
-	lUpdateOutput(mOutputs, mGbufferStage, foray::GBufferStage::MeshInstanceIndex);
-	lUpdateOutput(mOutputs, mRestirStage, foray::RaytracingStage::RaytracingRenderTargetName);
+    lUpdateOutput(mOutputs, mGbufferStage, foray::stages::GBufferStage::Albedo);
+    lUpdateOutput(mOutputs, mGbufferStage, foray::stages::GBufferStage::WorldspacePosition);
+    lUpdateOutput(mOutputs, mGbufferStage, foray::stages::GBufferStage::WorldspaceNormal);
+    lUpdateOutput(mOutputs, mGbufferStage, foray::stages::GBufferStage::MotionVector);
+    lUpdateOutput(mOutputs, mGbufferStage, foray::stages::GBufferStage::MaterialIndex);
+    lUpdateOutput(mOutputs, mGbufferStage, foray::stages::GBufferStage::MeshInstanceIndex);
+    lUpdateOutput(mOutputs, mRestirStage, foray::stages::RaytracingStage::RaytracingRenderTargetName);
 
 	if (mCurrentOutput.size() == 0 || !mOutputs.contains(mCurrentOutput))
 	{

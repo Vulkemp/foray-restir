@@ -1,13 +1,13 @@
 #pragma once
 #include <array>
-#include <memory/foray_managedubo.hpp>
 #include <stages/foray_raytracingstage.hpp>
+#include <util/foray_managedubo.hpp>
 
 // number of samples to store in a single reservoir
 #define RESERVOIR_SIZE 4
 
 namespace foray {
-    class RestirStage : public RaytracingStage
+    class RestirStage : public foray::stages::RaytracingStage
     {
       protected:
         struct RestirConfiguration
@@ -33,9 +33,9 @@ namespace foray {
         };
 
       public:
-        virtual void Init(const VkContext* context, Scene* scene, ManagedImage* envmap, ManagedImage* noiseSource);
+        virtual void Init(const foray::core::VkContext* context, foray::scene::Scene* scene, foray::core::ManagedImage* envmap, foray::core::ManagedImage* noiseSource);
         virtual void CreateRaytraycingPipeline() override;
-        virtual void OnShadersRecompiled(ShaderCompiler* shaderCompiler) override;
+        virtual void OnShadersRecompiled() override;
 
         virtual void SetupDescriptors() override;
 
@@ -44,10 +44,10 @@ namespace foray {
 
         struct RtStageShader
         {
-            std::string  Path = "";
-            ShaderModule Module;
+            std::string               Path = "";
+            foray::core::ShaderModule Module;
 
-            void Create(const VkContext* context);
+            void Create(const foray::core::VkContext* context);
             void Destroy();
         };
 
@@ -57,14 +57,14 @@ namespace foray {
         RtStageShader mDefault_ClosestHit{"shaders/ray-default/closesthit.rchit"};
         RtStageShader mDefault_Miss{"shaders/ray-default/miss.rmiss"};
 
-        std::array<foray::ManagedBuffer, 2>                  mRestirStorageBuffers;
+        std::array<foray::core::ManagedBuffer, 2>          mRestirStorageBuffers;
         std::array<std::vector<VkDescriptorBufferInfo>, 2> mBufferInfos_StorageBufferRead;
         std::array<std::vector<VkDescriptorBufferInfo>, 2> mBufferInfos_StorageBufferWrite;
-        foray::ManagedUbo<RestirConfiguration>               mRestirConfigurationUbo;
+        foray::util::ManagedUbo<RestirConfiguration>       mRestirConfigurationUbo;
         std::vector<VkDescriptorBufferInfo>                mRestirConfigurationBufferInfos;
 
-        std::shared_ptr<DescriptorSetHelper::DescriptorInfo> MakeDescriptorInfos_RestirConfigurationUbo(VkShaderStageFlags shaderStage);
-        std::shared_ptr<DescriptorSetHelper::DescriptorInfo> MakeDescriptorInfos_StorageBufferReadSource(VkShaderStageFlags shaderStage);
-        std::shared_ptr<DescriptorSetHelper::DescriptorInfo> MakeDescriptorInfos_StorageBufferWriteTarget(VkShaderStageFlags shaderStage);
+        std::shared_ptr<foray::core::DescriptorSetHelper::DescriptorInfo> MakeDescriptorInfos_RestirConfigurationUbo(VkShaderStageFlags shaderStage);
+        std::shared_ptr<foray::core::DescriptorSetHelper::DescriptorInfo> MakeDescriptorInfos_StorageBufferReadSource(VkShaderStageFlags shaderStage);
+        std::shared_ptr<foray::core::DescriptorSetHelper::DescriptorInfo> MakeDescriptorInfos_StorageBufferWriteTarget(VkShaderStageFlags shaderStage);
     };
 }  // namespace foray

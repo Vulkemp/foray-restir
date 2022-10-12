@@ -5,13 +5,13 @@
 
 // Include structs and bindings
 
-#include "../../foray_rt_rpf/src/shaders/rt_common/bindpoints.glsl"
-#include "../../foray_rt_rpf/src/shaders/common/camera.glsl"
-#include "../../foray_rt_rpf/src/shaders/rt_common/tlas.glsl"
-#include "../../foray_rt_rpf/src/shaders/rt_common/imageoutput.glsl"
-#include "../../foray_rt_rpf/src/shaders/common/lcrng.glsl"
-#include "../../foray_rt_rpf/src/shaders/common/noisetex.glsl"
-#include "../../foray_rt_rpf/src/shaders/rt_common/tracerconfig.glsl"
+#include "../../foray/src/shaders/rt_common/bindpoints.glsl"
+#include "../../foray/src/shaders/common/camera.glsl"
+#include "../../foray/src/shaders/rt_common/tlas.glsl"
+#include "../../foray/src/shaders/rt_common/imageoutput.glsl"
+#include "../../foray/src/shaders/common/lcrng.glsl"
+#include "../../foray/src/shaders/common/noisetex.glsl"
+#include "../../foray/src/shaders/rt_common/tracerconfig.glsl"
 
 layout(binding = 11,  set = 0) readonly uniform RestirConfiguration
 {
@@ -42,7 +42,7 @@ layout(binding = 13,  set = 0) buffer PrevFrameReservoirs { Reservoir prevFrameR
 // Declare hitpayloads
 
 #define HITPAYLOAD_OUT
-#include "../../foray_rt_rpf/src/shaders/rt_common/payload.glsl"
+#include "../../foray/src/shaders/rt_common/payload.glsl"
 
 void main() 
 {
