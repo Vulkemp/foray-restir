@@ -1,7 +1,7 @@
 #include "restirstage.hpp"
-#include <utility/hsk_shadermanager.hpp>
+#include <utility/foray_shadermanager.hpp>
 
-namespace hsk {
+namespace foray {
     void RestirStage::Init(const VkContext* context, Scene* scene, ManagedImage* envmap, ManagedImage* noiseSource)
     {
         mContext = context;
@@ -142,4 +142,4 @@ namespace hsk {
         descriptorInfo->AddDescriptorSet(&mBufferInfos_StorageBufferWrite[secondDescriptorSetIndex]);
         return descriptorInfo;
     }
-}  // namespace hsk
+}  // namespace foray

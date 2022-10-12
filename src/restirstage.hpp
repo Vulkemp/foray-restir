@@ -1,12 +1,12 @@
 #pragma once
 #include <array>
-#include <memory/hsk_managedubo.hpp>
-#include <stages/hsk_raytracingstage.hpp>
+#include <memory/foray_managedubo.hpp>
+#include <stages/foray_raytracingstage.hpp>
 
 // number of samples to store in a single reservoir
 #define RESERVOIR_SIZE 4
 
-namespace hsk {
+namespace foray {
     class RestirStage : public RaytracingStage
     {
       protected:
@@ -57,14 +57,14 @@ namespace hsk {
         RtStageShader mDefault_ClosestHit{"shaders/ray-default/closesthit.rchit"};
         RtStageShader mDefault_Miss{"shaders/ray-default/miss.rmiss"};
 
-        std::array<hsk::ManagedBuffer, 2>                  mRestirStorageBuffers;
+        std::array<foray::ManagedBuffer, 2>                  mRestirStorageBuffers;
         std::array<std::vector<VkDescriptorBufferInfo>, 2> mBufferInfos_StorageBufferRead;
         std::array<std::vector<VkDescriptorBufferInfo>, 2> mBufferInfos_StorageBufferWrite;
-        hsk::ManagedUbo<RestirConfiguration>               mRestirConfigurationUbo;
+        foray::ManagedUbo<RestirConfiguration>               mRestirConfigurationUbo;
         std::vector<VkDescriptorBufferInfo>                mRestirConfigurationBufferInfos;
 
         std::shared_ptr<DescriptorSetHelper::DescriptorInfo> MakeDescriptorInfos_RestirConfigurationUbo(VkShaderStageFlags shaderStage);
         std::shared_ptr<DescriptorSetHelper::DescriptorInfo> MakeDescriptorInfos_StorageBufferReadSource(VkShaderStageFlags shaderStage);
         std::shared_ptr<DescriptorSetHelper::DescriptorInfo> MakeDescriptorInfos_StorageBufferWriteTarget(VkShaderStageFlags shaderStage);
     };
-}  // namespace hsk
+}  // namespace foray

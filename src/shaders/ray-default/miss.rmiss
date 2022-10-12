@@ -5,9 +5,9 @@
 // Declare hitpayloads
 
 #define HITPAYLOAD_IN
-#include "../../../hsk_rt_rpf/src/shaders/rt_common/bindpoints.glsl"
-#include "../../../hsk_rt_rpf/src/shaders/rt_common/payload.glsl"
-#include "../../../hsk_rt_rpf/src/shaders/common/environmentmap.glsl"
+#include "../../../foray_rt_rpf/src/shaders/rt_common/bindpoints.glsl"
+#include "../../../foray_rt_rpf/src/shaders/rt_common/payload.glsl"
+#include "../../../foray_rt_rpf/src/shaders/common/environmentmap.glsl"
 
 void main()
 {
