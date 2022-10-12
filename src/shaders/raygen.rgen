@@ -39,6 +39,12 @@ struct Reservoir {
 layout(binding = 12,  set = 0) buffer Reservoirs{ Reservoir reservoirs[]; } reservoirs;
 layout(binding = 13,  set = 0) buffer PrevFrameReservoirs { Reservoir prevFrameReservoirs[]; } prevFrameReservoirs;
 
+#define ALBEDO 0
+#define WORLDNORMAL 1
+#define WORLDPOS 2
+#define MOTION 3
+layout(set = 0, binding = 14) uniform sampler2D GBufferTextures[4];
+
 // Declare hitpayloads
 
 #define HITPAYLOAD_OUT
@@ -46,7 +52,9 @@ layout(binding = 13,  set = 0) buffer PrevFrameReservoirs { Reservoir prevFrameR
 
 void main() 
 {
-	const vec2 pixelCenter = vec2(gl_LaunchIDEXT.xy) + vec2(0.5);
+	uvec2 pixelCoord = gl_LaunchIDEXT.xy;
+
+	const vec2 pixelCenter = vec2(pixelCoord) + vec2(0.5);
 	const vec2 inUV = pixelCenter/vec2(gl_LaunchSizeEXT.xy);
 	vec2 d = inUV * 2.0 - 1.0;
 
@@ -61,7 +69,7 @@ void main()
 
 	ivec2 texSize = textureSize(NoiseSource, 0);
 
-	ivec2 texel = ivec2(gl_LaunchIDEXT.x % texSize.x, gl_LaunchIDEXT.y % texSize.y);
+	ivec2 texel = ivec2(pixelCoord.x % texSize.x, pixelCoord.y % texSize.y);
 
 	uint left = TracerConfig.RngSeed;
 	uint right = texelFetch(NoiseSource, texel, 0).x;
@@ -76,11 +84,12 @@ void main()
 
     traceRayEXT(MainTlas, 0, 0xff, 0, 0, 0, origin.xyz, tmin, direction.xyz, tmax, 0);
 
-	imageStore(ImageOutput, ivec2(gl_LaunchIDEXT.xy), vec4(ChildPayload.Radiance, 1.0));
+	imageStore(ImageOutput, ivec2(pixelCoord.xy), vec4(ChildPayload.Radiance, 1.0));
 
 	// testing reservoirs  
 	vec4 color = vec4((prevFrameReservoirs.prevFrameReservoirs[0].numStreamSamples % 255) / 255.0f);
 	reservoirs.reservoirs[0].numStreamSamples = prevFrameReservoirs.prevFrameReservoirs[0].numStreamSamples + 1;
 
-	imageStore(ImageOutput, ivec2(gl_LaunchIDEXT.xy), color);
+	vec3 albedo = texelFetch(GBufferTextures[WORLDPOS], ivec2(pixelCoord), 0).xyz;
+	imageStore(ImageOutput, ivec2(pixelCoord.xy), vec4(albedo,1));
 }

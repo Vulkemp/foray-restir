@@ -2,10 +2,15 @@
 #include <core/foray_shadermanager.hpp>
 
 namespace foray {
-    void RestirStage::Init(const foray::core::VkContext* context, foray::scene::Scene* scene, foray::core::ManagedImage* envmap, foray::core::ManagedImage* noiseSource)
+    void RestirStage::Init(const foray::core::VkContext* context,
+                           foray::scene::Scene*          scene,
+                           foray::core::ManagedImage*    envmap,
+                           foray::core::ManagedImage*    noiseSource,
+                           foray::stages::GBufferStage*  gbufferStage)
     {
-        mContext = context;
-        mScene   = scene;
+        mContext      = context;
+        mScene        = scene;
+        mGBufferStage = gbufferStage;
         if(envmap != nullptr)
         {
             mEnvMap.Create(context, envmap);
@@ -26,6 +31,7 @@ namespace foray {
                                           .unnormalizedCoordinates = VK_FALSE};
             AssertVkResult(vkCreateSampler(context->Device, &samplerCi, nullptr, &mNoiseSource.Sampler));
         }
+        CreateGBufferSampler();
 
         // init restir buffers
         mRestirConfigurationUbo.Create(mContext, "RestirConfigurationUbo");
@@ -73,12 +79,18 @@ namespace foray {
         }
     }
 
+    void RestirStage::OnResized(const VkExtent2D& extent) {
+        UpdateDescriptorRestir();
+        RaytracingStage::OnResized(extent);
+    }
+
     void RestirStage::SetupDescriptors()
     {
         RaytracingStage::SetupDescriptors();
         mDescriptorSet.SetDescriptorInfoAt(11, MakeDescriptorInfos_RestirConfigurationUbo(VkShaderStageFlagBits::VK_SHADER_STAGE_RAYGEN_BIT_KHR));
         mDescriptorSet.SetDescriptorInfoAt(12, MakeDescriptorInfos_StorageBufferReadSource(VkShaderStageFlagBits::VK_SHADER_STAGE_RAYGEN_BIT_KHR));
         mDescriptorSet.SetDescriptorInfoAt(13, MakeDescriptorInfos_StorageBufferWriteTarget(VkShaderStageFlagBits::VK_SHADER_STAGE_RAYGEN_BIT_KHR));
+        mDescriptorSet.SetDescriptorInfoAt(14, MakeDescriptorInfos_GBufferImages(VkShaderStageFlagBits::VK_SHADER_STAGE_RAYGEN_BIT_KHR));
     }
 
     void RestirStage::Destroy()
@@ -94,6 +106,12 @@ namespace foray {
         mDefault_Miss.Destroy();
     }
 
+    void RestirStage::UpdateDescriptorRestir()
+    {
+        // updating gbuffer image handles
+        mDescriptorSet.SetDescriptorInfoAt(14, MakeDescriptorInfos_GBufferImages(VkShaderStageFlagBits::VK_SHADER_STAGE_RAYGEN_BIT_KHR));
+    }
+
     void RestirStage::RtStageShader::Create(const foray::core::VkContext* context)
     {
         Module.LoadFromSource(context, Path);
@@ -101,6 +119,25 @@ namespace foray {
     void RestirStage::RtStageShader::Destroy()
     {
         Module.Destroy();
+    }
+
+    void RestirStage::CreateGBufferSampler()
+    {
+        if(mGBufferSampler == nullptr)
+        {
+            VkSamplerCreateInfo samplerCi{.sType                   = VkStructureType::VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+                                          .magFilter               = VkFilter::VK_FILTER_NEAREST,
+                                          .minFilter               = VkFilter::VK_FILTER_NEAREST,
+                                          .addressModeU            = VkSamplerAddressMode::VK_SAMPLER_ADDRESS_MODE_REPEAT,
+                                          .addressModeV            = VkSamplerAddressMode::VK_SAMPLER_ADDRESS_MODE_REPEAT,
+                                          .addressModeW            = VkSamplerAddressMode::VK_SAMPLER_ADDRESS_MODE_REPEAT,
+                                          .anisotropyEnable        = VK_FALSE,
+                                          .compareEnable           = VK_FALSE,
+                                          .minLod                  = 0,
+                                          .maxLod                  = 0,
+                                          .unnormalizedCoordinates = VK_FALSE};
+            AssertVkResult(vkCreateSampler(mContext->Device, &samplerCi, nullptr, &mGBufferSampler));
+        }
     }
 
     std::shared_ptr<foray::core::DescriptorSetHelper::DescriptorInfo> RestirStage::MakeDescriptorInfos_RestirConfigurationUbo(VkShaderStageFlags shaderStage)
@@ -143,6 +180,30 @@ namespace foray {
 
         descriptorInfo->AddDescriptorSet(&mBufferInfos_StorageBufferWrite[firstDescriptorSetIndex]);
         descriptorInfo->AddDescriptorSet(&mBufferInfos_StorageBufferWrite[secondDescriptorSetIndex]);
+        return descriptorInfo;
+    }
+
+    std::shared_ptr<foray::core::DescriptorSetHelper::DescriptorInfo> RestirStage::MakeDescriptorInfos_GBufferImages(VkShaderStageFlags shaderStage)
+    {
+        auto descriptorInfo = std::make_shared<foray::core::DescriptorSetHelper::DescriptorInfo>();
+        descriptorInfo->Init(VkDescriptorType::VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, shaderStage);
+
+        uint32_t gbufferImageCount = 4;
+        mGBufferImageInfos.resize(4);
+        std::array<foray::core::ManagedImage*, 4> gbufferImages = { 
+            mGBufferStage->GetColorAttachmentByName(mGBufferStage->Albedo),
+            mGBufferStage->GetColorAttachmentByName(mGBufferStage->WorldspaceNormal),
+            mGBufferStage->GetColorAttachmentByName(mGBufferStage->WorldspacePosition),
+            mGBufferStage->GetColorAttachmentByName(mGBufferStage->MotionVector),
+        };
+
+        for(size_t i = 0; i < gbufferImageCount; i++)
+        {
+            mGBufferImageInfos[i].imageView   = gbufferImages[i]->GetImageView();
+            mGBufferImageInfos[i].imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+            mGBufferImageInfos[i].sampler     = mGBufferSampler;
+        }
+        descriptorInfo->AddDescriptorSet(&mGBufferImageInfos);
         return descriptorInfo;
     }
 }  // namespace foray

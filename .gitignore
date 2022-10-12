@@ -11,3 +11,6 @@ logs/
 
 # data
 glTF-Sample-Models/*
+
+#imgui config
+imgui.ini
