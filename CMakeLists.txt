@@ -3,12 +3,12 @@ cmake_minimum_required(VERSION 3.18)
 project("foray_restir")
 
 # Include Compiler Config (sets c++ 20 and compiler flags)
-include("hsk_rt_rpf/cmakescripts/compilerconfig.cmake")
+include("foray_rt_rpf/cmakescripts/compilerconfig.cmake")
 
 # Run Locate SDL2 script
-set(SDL2_HINT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/hsk_rt_rpf/third_party")
-include("hsk_rt_rpf/cmakescripts/locatesdl2.cmake")
+set(SDL2_HINT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/foray_rt_rpf/third_party")
+include("foray_rt_rpf/cmakescripts/locatesdl2.cmake")
 
 # Add subdirectories
-add_subdirectory("hsk_rt_rpf")
+add_subdirectory("foray_rt_rpf")
 add_subdirectory("src")

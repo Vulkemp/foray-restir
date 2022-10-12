@@ -1,18 +1,18 @@
 #include "restir_app.hpp"
-#include <gltfconvert/hsk_modelconverter.hpp>
-#include <scenegraph/components/hsk_camera.hpp>
-#include <scenegraph/globalcomponents/hsk_cameramanager.hpp>
-#include <scenegraph/globalcomponents/hsk_tlasmanager.hpp>
-#include <scenegraph/components/hsk_freecameracontroller.hpp>
+#include <gltfconvert/foray_modelconverter.hpp>
+#include <scenegraph/components/foray_camera.hpp>
+#include <scenegraph/globalcomponents/foray_cameramanager.hpp>
+#include <scenegraph/globalcomponents/foray_tlasmanager.hpp>
+#include <scenegraph/components/foray_freecameracontroller.hpp>
 #include <imgui/imgui.h>
-#include <memory/hsk_managedimage.hpp>
+#include <memory/foray_managedimage.hpp>
 #include <vulkan/vulkan.h>
-#include <utility/hsk_imageloader.hpp>
-#include <bench/hsk_hostbenchmark.hpp>
+#include <utility/foray_imageloader.hpp>
+#include <bench/foray_hostbenchmark.hpp>
 
 void RestirProject::Init()
 {
-	hsk::logger()->set_level(spdlog::level::debug);
+	foray::logger()->set_level(spdlog::level::debug);
 	LoadEnvironmentMap();
 	GenerateNoiseSource();
 	loadScene();
@@ -29,12 +29,12 @@ void RestirProject::Update(float delta)
 	}
 }
 
-void RestirProject::OnEvent(const hsk::Event *event)
+void RestirProject::OnEvent(const foray::Event *event)
 {
 	DefaultAppBase::OnEvent(event);
-	auto buttonInput = dynamic_cast<const hsk::EventInputBinary *>(event);
-	auto axisInput = dynamic_cast<const hsk::EventInputAnalogue *>(event);
-	auto windowResized = dynamic_cast<const hsk::EventWindowResized *>(event);
+	auto buttonInput = dynamic_cast<const foray::EventInputBinary *>(event);
+	auto axisInput = dynamic_cast<const foray::EventInputAnalogue *>(event);
+	auto windowResized = dynamic_cast<const foray::EventWindowResized *>(event);
 	if (windowResized)
 	{
 		spdlog::info("Window resized w {} h {}", windowResized->Current.Width, windowResized->Current.Height);
@@ -51,25 +51,25 @@ void RestirProject::loadScene()
 		"../Sponza/glTF/Sponza.gltf",
 	});
 
-	mScene = std::make_unique<hsk::Scene>(&mContext);
-	hsk::ModelConverter converter(mScene.get());
+	mScene = std::make_unique<foray::Scene>(&mContext);
+	foray::ModelConverter converter(mScene.get());
 	for (const auto &path : scenePaths)
 	{
-		converter.LoadGltfModel(hsk::MakeRelativePath(path));
+		converter.LoadGltfModel(foray::MakeRelativePath(path));
 	}
-	mScene->MakeComponent<hsk::TlasManager>(&mContext)->CreateOrUpdate();
+	mScene->MakeComponent<foray::TlasManager>(&mContext)->CreateOrUpdate();
 
 	auto cameraNode = mScene->MakeNode();
 
-	cameraNode->MakeComponent<hsk::Camera>()->InitDefault();
-	cameraNode->MakeComponent<hsk::FreeCameraController>();
-	mScene->GetComponent<hsk::CameraManager>()->RefreshCameraList();
+	cameraNode->MakeComponent<foray::Camera>()->InitDefault();
+	cameraNode->MakeComponent<foray::FreeCameraController>();
+	mScene->GetComponent<foray::CameraManager>()->RefreshCameraList();
 
 	for (int32_t i = 0; i < scenePaths.size(); i++)
 	{
 		const auto &path = scenePaths[i];
 		const auto &log = converter.GetBenchmark().GetLogs()[i];
-		hsk::logger()->info("Model Load \"{}\":\n{}", path, log.PrintPretty());
+		foray::logger()->info("Model Load \"{}\":\n{}", path, log.PrintPretty());
 	}
 }
 
@@ -77,17 +77,17 @@ void RestirProject::LoadEnvironmentMap()
 {
 
 	constexpr VkFormat hdrVkFormat = VK_FORMAT_R32G32B32A32_SFLOAT;
-	hsk::ImageLoader<hdrVkFormat> imageLoader;
+	foray::ImageLoader<hdrVkFormat> imageLoader;
 	// env maps at https://polyhaven.com/a/alps_field
-	std::string pathToEnvMap = std::string(hsk::CurrentWorkingDirectory()) + "/../data/textures/envmap.exr";
+	std::string pathToEnvMap = std::string(foray::CurrentWorkingDirectory()) + "/../data/textures/envmap.exr";
 	if (!imageLoader.Init(pathToEnvMap))
 	{
-		hsk::logger()->warn("Loading env map failed \"{}\"", pathToEnvMap);
+		foray::logger()->warn("Loading env map failed \"{}\"", pathToEnvMap);
 		return;
 	}
 	if (!imageLoader.Load())
 	{
-		hsk::logger()->warn("Loading env map failed #2 \"{}\"", pathToEnvMap);
+		foray::logger()->warn("Loading env map failed #2 \"{}\"", pathToEnvMap);
 		return;
 	}
 
@@ -97,7 +97,7 @@ void RestirProject::LoadEnvironmentMap()
 		.depth = 1,
 	};
 
-	hsk::ManagedImage::CreateInfo ci("Environment map", VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, hdrVkFormat, ext3D);
+	foray::ManagedImage::CreateInfo ci("Environment map", VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, hdrVkFormat, ext3D);
 
 	imageLoader.InitManagedImage(&mContext, &mSphericalEnvMap, ci);
 	imageLoader.Destroy();
@@ -105,11 +105,11 @@ void RestirProject::LoadEnvironmentMap()
 
 void RestirProject::GenerateNoiseSource()
 {
-	hsk::HostBenchmark bench;
+	foray::HostBenchmark bench;
 	bench.Begin();
 	mNoiseSource.Create(&mContext);
 	bench.End();
-	hsk::logger()->info("Create Noise Tex \n{}", bench.GetLogs().front().PrintPretty());
+	foray::logger()->info("Create Noise Tex \n{}", bench.GetLogs().front().PrintPretty());
 }
 
 void RestirProject::Destroy()
@@ -126,7 +126,7 @@ void RestirProject::Destroy()
 	DefaultAppBase::Destroy();
 }
 
-void RestirProject::OnShadersRecompiled(hsk::ShaderCompiler *shaderCompiler)
+void RestirProject::OnShadersRecompiled(foray::ShaderCompiler *shaderCompiler)
 {
 	mGbufferStage.OnShadersRecompiled(shaderCompiler);
 	mRestirStage.OnShadersRecompiled(shaderCompiler);
@@ -174,11 +174,11 @@ void RestirProject::PrepareImguiWindow()
 void RestirProject::ConfigureStages()
 {
 	mGbufferStage.Init(&mContext, mScene.get());
-	auto albedoImage = mGbufferStage.GetColorAttachmentByName(hsk::GBufferStage::Albedo);
-	auto normalImage = mGbufferStage.GetColorAttachmentByName(hsk::GBufferStage::WorldspaceNormal);
+	auto albedoImage = mGbufferStage.GetColorAttachmentByName(foray::GBufferStage::Albedo);
+	auto normalImage = mGbufferStage.GetColorAttachmentByName(foray::GBufferStage::WorldspaceNormal);
 
 	mRestirStage.Init(&mContext, mScene.get(), &mSphericalEnvMap, &mNoiseSource.GetImage());
-	auto rtImage = mRestirStage.GetColorAttachmentByName(hsk::RaytracingStage::RaytracingRenderTargetName);
+	auto rtImage = mRestirStage.GetColorAttachmentByName(foray::RaytracingStage::RaytracingRenderTargetName);
 
 	UpdateOutputs();
 
@@ -186,10 +186,10 @@ void RestirProject::ConfigureStages()
 	PrepareImguiWindow();
 
 	// �nit copy stage
-	mImageToSwapchainStage.Init(&mContext, mOutputs[mCurrentOutput], hsk::ImageToSwapchainStage::PostCopy{.AccessFlags = (VkAccessFlagBits::VK_ACCESS_SHADER_WRITE_BIT), .ImageLayout = (VkImageLayout::VK_IMAGE_LAYOUT_GENERAL), .QueueFamilyIndex = (mContext.QueueGraphics)});
+	mImageToSwapchainStage.Init(&mContext, mOutputs[mCurrentOutput], foray::ImageToSwapchainStage::PostCopy{.AccessFlags = (VkAccessFlagBits::VK_ACCESS_SHADER_WRITE_BIT), .ImageLayout = (VkImageLayout::VK_IMAGE_LAYOUT_GENERAL), .QueueFamilyIndex = (mContext.QueueGraphics)});
 }
 
-void RestirProject::RecordCommandBuffer(hsk::FrameRenderInfo &renderInfo)
+void RestirProject::RecordCommandBuffer(foray::FrameRenderInfo &renderInfo)
 {
 	mScene->Update(renderInfo);
 	mGbufferStage.RecordFrame(renderInfo);
@@ -215,10 +215,10 @@ void RestirProject::OnResized(VkExtent2D size)
 {
 	mScene->InvokeOnResized(size);
 	mGbufferStage.OnResized(size);
-	auto albedoImage = mGbufferStage.GetColorAttachmentByName(hsk::GBufferStage::Albedo);
-	auto normalImage = mGbufferStage.GetColorAttachmentByName(hsk::GBufferStage::WorldspaceNormal);
+	auto albedoImage = mGbufferStage.GetColorAttachmentByName(foray::GBufferStage::Albedo);
+	auto normalImage = mGbufferStage.GetColorAttachmentByName(foray::GBufferStage::WorldspaceNormal);
 	mRestirStage.OnResized(size);
-	auto rtImage = mRestirStage.GetColorAttachmentByName(hsk::RaytracingStage::RaytracingRenderTargetName);
+	auto rtImage = mRestirStage.GetColorAttachmentByName(foray::RaytracingStage::RaytracingRenderTargetName);
 
 	UpdateOutputs();
 
@@ -226,7 +226,7 @@ void RestirProject::OnResized(VkExtent2D size)
 	mImageToSwapchainStage.OnResized(size, mOutputs[mCurrentOutput]);
 }
 
-void lUpdateOutput(std::unordered_map<std::string_view, hsk::ManagedImage *> &map, hsk::RenderStage &stage, const std::string_view name)
+void lUpdateOutput(std::unordered_map<std::string_view, foray::ManagedImage *> &map, foray::RenderStage &stage, const std::string_view name)
 {
 	map[name] = stage.GetColorAttachmentByName(name);
 }
@@ -234,13 +234,13 @@ void lUpdateOutput(std::unordered_map<std::string_view, hsk::ManagedImage *> &ma
 void RestirProject::UpdateOutputs()
 {
 	mOutputs.clear();
-	lUpdateOutput(mOutputs, mGbufferStage, hsk::GBufferStage::Albedo);
-	lUpdateOutput(mOutputs, mGbufferStage, hsk::GBufferStage::WorldspacePosition);
-	lUpdateOutput(mOutputs, mGbufferStage, hsk::GBufferStage::WorldspaceNormal);
-	lUpdateOutput(mOutputs, mGbufferStage, hsk::GBufferStage::MotionVector);
-	lUpdateOutput(mOutputs, mGbufferStage, hsk::GBufferStage::MaterialIndex);
-	lUpdateOutput(mOutputs, mGbufferStage, hsk::GBufferStage::MeshInstanceIndex);
-	lUpdateOutput(mOutputs, mRestirStage, hsk::RaytracingStage::RaytracingRenderTargetName);
+	lUpdateOutput(mOutputs, mGbufferStage, foray::GBufferStage::Albedo);
+	lUpdateOutput(mOutputs, mGbufferStage, foray::GBufferStage::WorldspacePosition);
+	lUpdateOutput(mOutputs, mGbufferStage, foray::GBufferStage::WorldspaceNormal);
+	lUpdateOutput(mOutputs, mGbufferStage, foray::GBufferStage::MotionVector);
+	lUpdateOutput(mOutputs, mGbufferStage, foray::GBufferStage::MaterialIndex);
+	lUpdateOutput(mOutputs, mGbufferStage, foray::GBufferStage::MeshInstanceIndex);
+	lUpdateOutput(mOutputs, mRestirStage, foray::RaytracingStage::RaytracingRenderTargetName);
 
 	if (mCurrentOutput.size() == 0 || !mOutputs.contains(mCurrentOutput))
 	{

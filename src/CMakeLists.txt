@@ -35,8 +35,8 @@ endif()
 
 target_include_directories(
 	${PROJECT_NAME}
-	PUBLIC "../hsk_rt_rpf/src"
-	PUBLIC "../hsk_rt_rpf/third_party"
+	PUBLIC "../foray_rt_rpf/src"
+	PUBLIC "../foray_rt_rpf/third_party"
 	PUBLIC ${Vulkan_INCLUDE_DIRS}
 )
 
