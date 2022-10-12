@@ -13,6 +13,32 @@
 #include "../../hsk_rt_rpf/src/shaders/common/noisetex.glsl"
 #include "../../hsk_rt_rpf/src/shaders/rt_common/tracerconfig.glsl"
 
+layout(binding = 11,  set = 0) readonly uniform RestirConfiguration
+{
+    /// @brief Current frames projection matrix
+    uint   ReservoirSize;
+    mat4   PrevFrameProjectionViewMatrix;
+    vec4   CameraPos;
+    uvec2  ScreenSize;
+    uint   Frame;
+    uint   InitialLightSampleCount;
+    uint   TemporalSampleCountMultiplier;
+    float  SpatialPosThreshold;
+    float  SpatialNormalThreshold;
+    uint   SpatialNeighbors;
+    float  SpatialRadius;
+    uint   Flags;
+}
+RestirConfig;
+
+struct Reservoir {
+	vec4 samples[4];
+	uint numStreamSamples;
+};
+
+layout(binding = 12,  set = 0) buffer Reservoirs{ Reservoir reservoirs[]; } reservoirs;
+layout(binding = 13,  set = 0) buffer PrevFrameReservoirs { Reservoir prevFrameReservoirs[]; } prevFrameReservoirs;
+
 // Declare hitpayloads
 
 #define HITPAYLOAD_OUT
@@ -51,4 +77,10 @@ void main()
     traceRayEXT(MainTlas, 0, 0xff, 0, 0, 0, origin.xyz, tmin, direction.xyz, tmax, 0);
 
 	imageStore(ImageOutput, ivec2(gl_LaunchIDEXT.xy), vec4(ChildPayload.Radiance, 1.0));
+
+	// testing reservoirs  
+	vec4 color = vec4((prevFrameReservoirs.prevFrameReservoirs[0].numStreamSamples % 255) / 255.0f);
+	reservoirs.reservoirs[0].numStreamSamples = prevFrameReservoirs.prevFrameReservoirs[0].numStreamSamples + 1;
+
+	imageStore(ImageOutput, ivec2(gl_LaunchIDEXT.xy), color);
 }
