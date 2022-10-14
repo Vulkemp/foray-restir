@@ -30,6 +30,7 @@
 #include <stdint.h>
 #include <util/foray_noisesource.hpp>
 #include <base/foray_defaultappbase.hpp>
+#include "structs.hpp"
 
 class RestirProject : public foray::base::DefaultAppBase
 {
@@ -56,6 +57,10 @@ class RestirProject : public foray::base::DefaultAppBase
     void loadScene();
     void LoadEnvironmentMap();
     void GenerateNoiseSource();
+    void CollectEmissiveTriangles();
+
+    std::vector<shader::TriLight> mTriangleLights;
+    void UploadLightsToGpu();
 
     /// @brief generates a GBuffer (Albedo, Positions, Normal, Motion Vectors, Mesh Instance Id as output images)
     foray::stages::GBufferStage mGbufferStage;

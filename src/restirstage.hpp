@@ -46,7 +46,7 @@ namespace foray {
         virtual void SetupDescriptors() override;
 
         virtual void Destroy() override;
-        virtual void DestroyShaders() override;
+        virtual void DestroyShaders() override;;
 
         struct RtStageShader
         {
@@ -59,12 +59,21 @@ namespace foray {
 
       protected:
         void UpdateDescriptorRestir();
+        virtual void PrepareAttachments() override;
 
         void                                                              CreateGBufferSampler();
         VkSampler                                                         mGBufferSampler{};
         std::vector<VkDescriptorImageInfo>                                mGBufferImageInfos;
         foray::stages::GBufferStage*                                      mGBufferStage{};
         std::shared_ptr<foray::core::DescriptorSetHelper::DescriptorInfo> MakeDescriptorInfos_GBufferImages(VkShaderStageFlags shaderStage);
+
+        foray::core::ManagedImage mPreviousFrameDepthBuffer_Read;
+        foray::core::ManagedImage mPreviousFrameDepthBuffer_Write;
+        std::array<foray::core::ManagedImage, 2>                          mPrevFrameDepthImages;
+        std::array<std::vector<VkDescriptorImageInfo>, 2>                 mImageInfos_PrevFrameDepthBufferRead;
+        std::array<std::vector<VkDescriptorImageInfo>, 2>                 mImageInfos_PrevFrameDepthBufferWrite;
+        std::shared_ptr<foray::core::DescriptorSetHelper::DescriptorInfo> MakeDescriptorInfos_PrevFrameDepthBufferRead(VkShaderStageFlags shaderStage);
+        std::shared_ptr<foray::core::DescriptorSetHelper::DescriptorInfo> MakeDescriptorInfos_PrevFrameDepthBufferWrite(VkShaderStageFlags shaderStage);
 
         RtStageShader mRaygen{"shaders/raygen.rgen"};
         RtStageShader mDefault_AnyHit{"shaders/ray-default/anyhit.rahit"};

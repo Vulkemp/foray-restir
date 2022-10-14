@@ -1,10 +1,12 @@
 #version 460
+
 #extension GL_KHR_vulkan_glsl : enable // Vulkan-specific syntax
 #extension GL_GOOGLE_include_directive : enable // Include files
 #extension GL_EXT_ray_tracing : enable // Raytracing
 
 // Include structs and bindings
-
+#ifndef includes
+#define includes
 #include "../../foray/src/shaders/rt_common/bindpoints.glsl"
 #include "../../foray/src/shaders/common/camera.glsl"
 #include "../../foray/src/shaders/rt_common/tlas.glsl"
@@ -12,6 +14,7 @@
 #include "../../foray/src/shaders/common/lcrng.glsl"
 #include "../../foray/src/shaders/common/noisetex.glsl"
 #include "../../foray/src/shaders/rt_common/tracerconfig.glsl"
+#endif
 
 layout(binding = 11,  set = 0) readonly uniform RestirConfiguration
 {
@@ -28,13 +31,21 @@ layout(binding = 11,  set = 0) readonly uniform RestirConfiguration
     uint   SpatialNeighbors;
     float  SpatialRadius;
     uint   Flags;
+	uint   NumTriLights;
 }
 RestirConfig;
 
-struct Reservoir {
-	vec4 samples[4];
-	uint numStreamSamples;
-};
+
+//# i nclude "../structs.hpp"
+struct TriLight
+    {
+        vec4  p1;
+        vec4  p2;
+        vec4  p3;
+        uint  materialIndex;
+        float normalArea;
+    };
+#include "restir/restirUtils.glsl"
 
 layout(binding = 12,  set = 0) buffer Reservoirs{ Reservoir reservoirs[]; } reservoirs;
 layout(binding = 13,  set = 0) buffer PrevFrameReservoirs { Reservoir prevFrameReservoirs[]; } prevFrameReservoirs;
@@ -45,10 +56,17 @@ layout(binding = 13,  set = 0) buffer PrevFrameReservoirs { Reservoir prevFrameR
 #define MOTION 3
 layout(set = 0, binding = 14) uniform sampler2D GBufferTextures[4];
 
+layout(set = 0, binding = 15) buffer TriLights{ TriLight triLights[]; } triLights;
+
 // Declare hitpayloads
 
 #define HITPAYLOAD_OUT
 #include "../../foray/src/shaders/rt_common/payload.glsl"
+
+vec3 pickPointOnTriangle(float r1, float r2, vec3 p1, vec3 p2, vec3 p3) {
+	float sqrt_r1 = sqrt(r1);
+	return (1.0 - sqrt_r1) * p1 + (sqrt_r1 * (1.0 - r2)) * p2 + (r2 * sqrt_r1) * p3;
+}
 
 void main() 
 {
@@ -82,14 +100,128 @@ void main()
 	}
 	ChildPayload.Seed = left + right;
 
+	uint randomSeed = left + right;
+
     traceRayEXT(MainTlas, 0, 0xff, 0, 0, 0, origin.xyz, tmin, direction.xyz, tmax, 0);
 
 	imageStore(ImageOutput, ivec2(pixelCoord.xy), vec4(ChildPayload.Radiance, 1.0));
 
-	// testing reservoirs  
+	// testing reservoirs
 	vec4 color = vec4((prevFrameReservoirs.prevFrameReservoirs[0].numStreamSamples % 255) / 255.0f);
 	reservoirs.reservoirs[0].numStreamSamples = prevFrameReservoirs.prevFrameReservoirs[0].numStreamSamples + 1;
 
-	vec3 albedo = texelFetch(GBufferTextures[WORLDPOS], ivec2(pixelCoord), 0).xyz;
-	imageStore(ImageOutput, ivec2(pixelCoord.xy), vec4(albedo,1));
+	vec3 albedo = texelFetch(GBufferTextures[WORLDNORMAL], ivec2(pixelCoord), 0).xyz;
+	//imageStore(ImageOutput, ivec2(pixelCoord.xy), vec4(albedo,1));
+
+//	Reservoir res = newReservoir();
+//
+//	// RestirConfig
+//	for (int i = 0; i < RestirConfiguration.InitialLightSampleCount; ++i) {
+//		int selected_idx;
+//		float lightSampleProb;
+//
+//		// chose a triangle with importance sampling by light power
+//		//aliasTableSample(randFloat(rand), randFloat(rand), selected_idx, lightSampleProb);
+//
+//		uint randomNr = lcgUint(randomSeed);
+//		selected_idx = mod(randomNr, RestirConfiguration.NumTriLights); 
+//
+//		vec4 lightNormal;
+//		float lightSampleLum;
+//		int lightSampleIndex;
+//
+//		// pick a random point on the triangle light
+//		TriLight light = triLights.triLights[selected_idx];
+//		vec3 lightSamplePos = pickPointOnTriangle(lcgFloat(randomSeed), lcgFloat(randomSeed), light.p1.xyz, light.p2.xyz, light.p3.xyz);
+//		
+//		// TODO: calculate luminance from material id
+//		// lightSampleLum = light.emission_luminance.w;
+//		float lightSampleLum = 1.0;
+//
+//		vec3 wi = normalize(worldPos - lightSamplePos);
+//		vec3 normal = light.normalArea.xyz;
+//		lightSampleProb /= abs(dot(wi, normal)) * light.normalArea.w;
+//		lightNormal = vec4(normal, 1.0f);
+//
+//
+//		// evaluate light emission, based on view angle and material brdf
+////		float pHat = evaluatePHat(
+////			worldPos, lightSamplePos, uniforms.cameraPos.xyz,
+////			normal, lightNormal.xyz, lightNormal.w > 0.5f,
+////			albedoLum, lightSampleLum, roughnessMetallic.x, roughnessMetallic.y
+////		);
+//		float pHat = 1.0f;
+//
+//		addSampleToReservoir(res, lightSamplePos, lightNormal, lightSampleLum, lightSampleIndex, pHat, lightSampleProb, rand);
+//	}
+//
+//	uint reservoirIndex = pixelCoord.y * uniforms.screenSize.x + pixelCoord.x;
+//	
+//	vec3 worldPos = texelFetch(GBufferTextures[WORLDPOS], ivec2(pixelCoord), 0).xyz;
+//
+//	// Visibility Reuse (toggle ?)
+//	if(1)
+//	{
+//		for (int i = 0; i < RESERVOIR_SIZE; i++) {
+//			bool shadowed = testVisibility(worldPos, res.samples[i].position_emissionLum.xyz);
+//
+//			if (shadowed) {
+//				res.samples[i].w = 0.0f;
+//				res.samples[i].sumWeights = 0.0f;
+//			}
+//		}
+//	}
+//
+//	// Temporal reuse
+//	if (1) 
+//	{
+//		vec4 prevFramePos = uniforms.prevFrameProjectionViewMatrix * vec4(worldPos, 1.0f);
+//		prevFramePos.xyz /= prevFramePos.w;
+//		prevFramePos.xy = (prevFramePos.xy + 1.0f) * 0.5f * vec2(uniforms.screenSize);
+//		if (
+//			all(greaterThan(prevFramePos.xy, vec2(0.0f))) &&
+//			all(lessThan(prevFramePos.xy, vec2(uniforms.screenSize)))
+//		) {
+//			ivec2 prevFrag = ivec2(prevFramePos.xy);
+//
+//#ifdef COMPARE_DEPTH
+//			float depthDiff = prevFramePos.z - texelFetch(uniPrevDepth, prevFrag, 0).x;
+//			if (depthDiff < 0.001f * prevFramePos.z) {
+//#else
+//			// highest quality results can be obtained by directly comparing the world positions
+//			// the performance impact of this is unclear
+//			vec3 positionDiff = worldPos - texelFetch(uniPrevFrameWorldPosition, prevFrag, 0).xyz;
+//			if (dot(positionDiff, positionDiff) < 0.01f) {
+//#endif
+//				vec3 albedoDiff = albedo - texelFetch(uniPrevFrameAlbedo, prevFrag, 0).rgb;
+//				if (dot(albedoDiff, albedoDiff) < 0.01f) {
+//					float normalDot = dot(normal, texelFetch(uniPrevFrameNormal, prevFrag, 0).xyz);
+//					if (normalDot > 0.5f) {
+//						Reservoir prevRes = prevFrameReservoirs[prevFrag.y * uniforms.screenSize.x + prevFrag.x];
+//
+//						// clamp the number of samples
+//						prevRes.numStreamSamples = min(
+//							prevRes.numStreamSamples, uniforms.temporalSampleCountMultiplier * res.numStreamSamples
+//						);
+//
+//						vec2 metallicRoughness = texelFetch(uniMaterialProperties, ivec2(pixelCoord), 0).xy;
+//
+//						float pHat[RESERVOIR_SIZE];
+//						for (int i = 0; i < RESERVOIR_SIZE; ++i) {
+//							pHat[i] = evaluatePHat(
+//								worldPos, prevRes.samples[i].position_emissionLum.xyz, uniforms.cameraPos.xyz,
+//								normal, prevRes.samples[i].normal.xyz, prevRes.samples[i].normal.w > 0.5f,
+//								albedoLum, prevRes.samples[i].position_emissionLum.w, metallicRoughness.x, metallicRoughness.y
+//							);
+//						}
+//
+//						combineReservoirs(res, prevRes, pHat, rand);
+//					}
+//				}
+//			}
+//		}
+//	}
+//
+//	reservoirs[reservoirIndex] = res;
+
 }
