@@ -39,6 +39,10 @@ class RestirProject : public foray::base::DefaultAppBase
     ~RestirProject(){};
 
   protected:
+    virtual void BeforeInstanceCreate(vkb::InstanceBuilder& instanceBuilder) override;
+    virtual void BeforeDeviceBuilding(vkb::DeviceBuilder& deviceBuilder) override;
+    virtual void BeforePhysicalDeviceSelection(vkb::PhysicalDeviceSelector& pds) override;
+
     virtual void Init() override;
     virtual void OnEvent(const foray::Event* event) override;
     virtual void Update(float delta) override;

@@ -14,8 +14,59 @@
 
 #include "structs.hpp"
 
+void RestirProject::BeforeInstanceCreate(vkb::InstanceBuilder& instanceBuilder) {
+    instanceBuilder.add_validation_feature_enable(VK_VALIDATION_FEATURE_ENABLE_DEBUG_PRINTF_EXT);
+    instanceBuilder.enable_extension(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+    instanceBuilder.enable_extension(VK_EXT_DEBUG_REPORT_EXTENSION_NAME);
+}
+
+void RestirProject::BeforeDeviceBuilding(vkb::DeviceBuilder& deviceBuilder){}
+
+void RestirProject::BeforePhysicalDeviceSelection(vkb::PhysicalDeviceSelector& pds)
+{
+    pds.add_required_extension(VK_KHR_SHADER_NON_SEMANTIC_INFO_EXTENSION_NAME);
+}
+
+// And this is the callback that the validator will call
+VkBool32 myDebugCallback(VkDebugReportFlagsEXT      flags,
+                         VkDebugReportObjectTypeEXT objectType,
+                         uint64_t                   object,
+                         size_t                     location,
+                         int32_t                    messageCode,
+                         const char*                pLayerPrefix,
+                         const char*                pMessage,
+                         void*                      pUserData)
+{
+    if(flags & VK_DEBUG_REPORT_ERROR_BIT_EXT)
+    {
+        printf("debugPrintfEXT: %s", pMessage);
+    }
+
+    return false;
+}
+
 void RestirProject::Init()
 {
+
+    VkDebugReportCallbackEXT debugCallbackHandle;
+
+    // Populate the VkDebugReportCallbackCreateInfoEXT
+    VkDebugReportCallbackCreateInfoEXT ci = {};
+    ci.sType                              = VK_STRUCTURE_TYPE_DEBUG_REPORT_CALLBACK_CREATE_INFO_EXT;
+    ci.pfnCallback                        = myDebugCallback;
+    ci.flags                              = VK_DEBUG_REPORT_INFORMATION_BIT_EXT;
+    ci.pUserData                          = nullptr;
+
+    PFN_vkCreateDebugReportCallbackEXT pfn_vkCreateDebugReportCallbackEXT =
+        reinterpret_cast<PFN_vkCreateDebugReportCallbackEXT>(vkGetDeviceProcAddr(mContext.Device, "vkCreateDebugReportCallbackEXT"));
+    
+    PFN_vkCreateDebugReportCallbackEXT CreateDebugReportCallback = VK_NULL_HANDLE;
+    CreateDebugReportCallback                                    = (PFN_vkCreateDebugReportCallbackEXT)vkGetInstanceProcAddr(mContext.Instance, "vkCreateDebugReportCallbackEXT");
+
+    // Create the callback handle
+    CreateDebugReportCallback(mContext.Instance, &ci, nullptr, &debugCallbackHandle);
+
+
     foray::logger()->set_level(spdlog::level::debug);
     LoadEnvironmentMap();
     GenerateNoiseSource();
@@ -264,9 +315,22 @@ void RestirProject::RecordCommandBuffer(foray::base::FrameRenderInfo& renderInfo
     mScene->Update(renderInfo);
     mGbufferStage.RecordFrame(renderInfo);
 
-    // transform depth from attachment optimal to read optimal
-    renderInfo
-    mGbufferStage.GetDepthBuffer()->TransitionLayout(VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL);
+    // after gbuffer stage, transform depth from attachment optimal to read optimal
+    {
+        VkCommandBuffer cmdBuffer = renderInfo.GetCommandBuffer();
+        mGbufferStage.GetDepthBuffer()->SetLayoutChanged(VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL);
+
+        foray::core::ManagedImage::LayoutTransitionInfo transitionInfo;
+        transitionInfo.CommandBuffer               = cmdBuffer;
+        transitionInfo.SubresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+        transitionInfo.OldImageLayout              = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
+        transitionInfo.NewImageLayout              = VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL;
+        transitionInfo.BarrierSrcAccessMask        = 0;
+        transitionInfo.BarrierDstAccessMask        = 0;
+        transitionInfo.SrcStage                    = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
+        transitionInfo.DstStage                    = VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR;
+        mGbufferStage.GetDepthBuffer()->TransitionLayout(transitionInfo);
+    }
 
     mRestirStage.RecordFrame(renderInfo);
 
