@@ -3,6 +3,7 @@
 #extension GL_KHR_vulkan_glsl : enable // Vulkan-specific syntax
 #extension GL_GOOGLE_include_directive : enable // Include files
 #extension GL_EXT_ray_tracing : enable // Raytracing
+#extension GL_EXT_debug_printf : enable
 
 // Include structs and bindings
 #ifndef includes
@@ -19,10 +20,10 @@
 layout(binding = 11,  set = 0) readonly uniform RestirConfiguration
 {
     /// @brief Current frames projection matrix
-    uint   ReservoirSize;
     mat4   PrevFrameProjectionViewMatrix;
     vec4   CameraPos;
     uvec2  ScreenSize;
+    uint   ReservoirSize;
     uint   Frame;
     uint   InitialLightSampleCount;
     uint   TemporalSampleCountMultiplier;
@@ -54,9 +55,11 @@ layout(binding = 13,  set = 0) buffer PrevFrameReservoirs { Reservoir prevFrameR
 #define WORLDNORMAL 1
 #define WORLDPOS 2
 #define MOTION 3
-layout(set = 0, binding = 14) uniform sampler2D GBufferTextures[4];
-
-layout(set = 0, binding = 15) buffer TriLights{ TriLight triLights[]; } triLights;
+#define DEPTH 4
+layout(set = 0, binding = 14) uniform sampler2D GBufferTextures[5];
+layout(set = 0, binding = 16) uniform sampler2D PreviousFrameImages[4];
+//layout(set = 0, binding = 16) buffer PrevFrameDepthBufferWrite{ float depth[]; } prevFrameDepthBufferWrite;
+//layout(set = 0, binding = 15) buffer TriLights{ TriLight triLights[]; } triLights;
 
 // Declare hitpayloads
 
@@ -110,8 +113,19 @@ void main()
 	vec4 color = vec4((prevFrameReservoirs.prevFrameReservoirs[0].numStreamSamples % 255) / 255.0f);
 	reservoirs.reservoirs[0].numStreamSamples = prevFrameReservoirs.prevFrameReservoirs[0].numStreamSamples + 1;
 
+	// test gbuffer 
 	vec3 albedo = texelFetch(GBufferTextures[WORLDNORMAL], ivec2(pixelCoord), 0).xyz;
-	//imageStore(ImageOutput, ivec2(pixelCoord.xy), vec4(albedo,1));
+	imageStore(ImageOutput, ivec2(pixelCoord.xy), vec4(albedo, 1));
+
+	// testing depth buffers
+	uint arrayLoc = pixelCoord.y * RestirConfig.ScreenSize.x + pixelCoord.x;
+	debugPrintfEXT("x=%d, y=%d", RestirConfig.ScreenSize.x, RestirConfig.ScreenSize.y);
+	float prevFrameDepth = texelFetch(PreviousFrameImages[0], ivec2(pixelCoord), 0).x;
+	//prevFrameDepthBufferWrite.depth[arrayLoc] =  lcgFloat(randomSeed); mod(prevFrameDepthBufferRead.depth[arrayLoc] + 1/255.f,1.0f);
+
+	imageStore(ImageOutput, ivec2(pixelCoord), vec4(prevFrameDepth, prevFrameDepth, prevFrameDepth, 1));
+
+	float depth = texelFetch(GBufferTextures[DEPTH], ivec2(pixelCoord), 0).x;
 
 //	Reservoir res = newReservoir();
 //

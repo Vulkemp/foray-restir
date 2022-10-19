@@ -64,6 +64,8 @@ namespace foray {
         virtual void UpdateDescriptors() override;
         virtual void PrepareAttachments() override;
 
+        void CopyGBufferToPrevFrameBuffers(base::FrameRenderInfo& renderInfo);
+
         void                                                              CreateGBufferSampler();
         VkSampler                                                         mGBufferSampler{};
         std::vector<VkDescriptorImageInfo>                                mGBufferImageInfos;
@@ -91,9 +93,9 @@ namespace foray {
             Normal,
             Albedo
         };
-        const uint32_t                                                    mNumPreviousFrameBuffer{4};
-        std::array<foray::core::ManagedBuffer, 4>                         mPrevFrameBuffers;
-        std::vector<VkDescriptorBufferInfo>                               mBufferInfos_PrevFrameBuffers;
+        const uint32_t                                                    mNumPreviousFrameBuffers{4};
+        std::array<foray::core::ManagedImage, 4>                          mPrevFrameBuffers;
+        std::vector<VkDescriptorImageInfo>                                mBufferInfos_PrevFrameBuffers;
         std::shared_ptr<foray::core::DescriptorSetHelper::DescriptorInfo> MakeDescriptorInfos_PrevFrameBuffers(VkShaderStageFlags shaderStage);
 
         std::array<foray::core::ManagedBuffer, 2>                         mRestirStorageBuffers;
