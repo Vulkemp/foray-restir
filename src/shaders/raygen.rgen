@@ -3,7 +3,7 @@
 #extension GL_KHR_vulkan_glsl : enable // Vulkan-specific syntax
 #extension GL_GOOGLE_include_directive : enable // Include files
 #extension GL_EXT_ray_tracing : enable // Raytracing
-#extension GL_EXT_debug_printf : enable
+//#extension GL_EXT_debug_printf : enable
 
 // Include structs and bindings
 #ifndef includes
@@ -119,7 +119,7 @@ void main()
 
 	// testing depth buffers
 	uint arrayLoc = pixelCoord.y * RestirConfig.ScreenSize.x + pixelCoord.x;
-	debugPrintfEXT("x=%d, y=%d", RestirConfig.ScreenSize.x, RestirConfig.ScreenSize.y);
+	//debugPrintfEXT("x=%d, y=%d", RestirConfig.ScreenSize.x, RestirConfig.ScreenSize.y);
 	float prevFrameDepth = texelFetch(PreviousFrameImages[0], ivec2(pixelCoord), 0).x;
 	//prevFrameDepthBufferWrite.depth[arrayLoc] =  lcgFloat(randomSeed); mod(prevFrameDepthBufferRead.depth[arrayLoc] + 1/255.f,1.0f);
 

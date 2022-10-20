@@ -15,16 +15,16 @@
 #include "structs.hpp"
 
 void RestirProject::BeforeInstanceCreate(vkb::InstanceBuilder& instanceBuilder) {
-    instanceBuilder.add_validation_feature_enable(VK_VALIDATION_FEATURE_ENABLE_DEBUG_PRINTF_EXT);
+   /* instanceBuilder.add_validation_feature_enable(VK_VALIDATION_FEATURE_ENABLE_DEBUG_PRINTF_EXT);
     instanceBuilder.enable_extension(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
-    instanceBuilder.enable_extension(VK_EXT_DEBUG_REPORT_EXTENSION_NAME);
+    instanceBuilder.enable_extension(VK_EXT_DEBUG_REPORT_EXTENSION_NAME);*/
 }
 
 void RestirProject::BeforeDeviceBuilding(vkb::DeviceBuilder& deviceBuilder){}
 
 void RestirProject::BeforePhysicalDeviceSelection(vkb::PhysicalDeviceSelector& pds)
 {
-    pds.add_required_extension(VK_KHR_SHADER_NON_SEMANTIC_INFO_EXTENSION_NAME);
+    //pds.add_required_extension(VK_KHR_SHADER_NON_SEMANTIC_INFO_EXTENSION_NAME);
 }
 
 // And this is the callback that the validator will call
@@ -47,24 +47,23 @@ VkBool32 myDebugCallback(VkDebugReportFlagsEXT      flags,
 
 void RestirProject::Init()
 {
-
     VkDebugReportCallbackEXT debugCallbackHandle;
 
-    // Populate the VkDebugReportCallbackCreateInfoEXT
-    VkDebugReportCallbackCreateInfoEXT ci = {};
-    ci.sType                              = VK_STRUCTURE_TYPE_DEBUG_REPORT_CALLBACK_CREATE_INFO_EXT;
-    ci.pfnCallback                        = myDebugCallback;
-    ci.flags                              = VK_DEBUG_REPORT_INFORMATION_BIT_EXT;
-    ci.pUserData                          = nullptr;
+    //// Populate the VkDebugReportCallbackCreateInfoEXT
+    //VkDebugReportCallbackCreateInfoEXT ci = {};
+    //ci.sType                              = VK_STRUCTURE_TYPE_DEBUG_REPORT_CALLBACK_CREATE_INFO_EXT;
+    //ci.pfnCallback                        = myDebugCallback;
+    //ci.flags                              = VK_DEBUG_REPORT_INFORMATION_BIT_EXT;
+    //ci.pUserData                          = nullptr;
 
-    PFN_vkCreateDebugReportCallbackEXT pfn_vkCreateDebugReportCallbackEXT =
-        reinterpret_cast<PFN_vkCreateDebugReportCallbackEXT>(vkGetDeviceProcAddr(mContext.Device, "vkCreateDebugReportCallbackEXT"));
-    
-    PFN_vkCreateDebugReportCallbackEXT CreateDebugReportCallback = VK_NULL_HANDLE;
-    CreateDebugReportCallback                                    = (PFN_vkCreateDebugReportCallbackEXT)vkGetInstanceProcAddr(mContext.Instance, "vkCreateDebugReportCallbackEXT");
+    //PFN_vkCreateDebugReportCallbackEXT pfn_vkCreateDebugReportCallbackEXT =
+    //    reinterpret_cast<PFN_vkCreateDebugReportCallbackEXT>(vkGetDeviceProcAddr(mContext.Device, "vkCreateDebugReportCallbackEXT"));
+    //
+    //PFN_vkCreateDebugReportCallbackEXT CreateDebugReportCallback = VK_NULL_HANDLE;
+    //CreateDebugReportCallback                                    = (PFN_vkCreateDebugReportCallbackEXT)vkGetInstanceProcAddr(mContext.Instance, "vkCreateDebugReportCallbackEXT");
 
-    // Create the callback handle
-    CreateDebugReportCallback(mContext.Instance, &ci, nullptr, &debugCallbackHandle);
+    //// Create the callback handle
+    //CreateDebugReportCallback(mContext.Instance, &ci, nullptr, &debugCallbackHandle);
 
 
     foray::logger()->set_level(spdlog::level::debug);
