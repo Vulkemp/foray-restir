@@ -43,7 +43,7 @@ namespace foray {
         virtual void OnShadersRecompiled() override;
         virtual void OnResized(const VkExtent2D& extent) override;
 
-        virtual void RecordFrame(base::FrameRenderInfo& renderInfo) override;
+        virtual void RecordFrame(VkCommandBuffer commandBuffer, base::FrameRenderInfo& renderInfo) override;
 
         virtual void SetupDescriptors() override;
 
@@ -64,7 +64,7 @@ namespace foray {
         virtual void UpdateDescriptors() override;
         virtual void PrepareAttachments() override;
 
-        void CopyGBufferToPrevFrameBuffers(base::FrameRenderInfo& renderInfo);
+        void CopyGBufferToPrevFrameBuffers(VkCommandBuffer commandBuffer, base::FrameRenderInfo& renderInfo);
 
         void                                                              CreateGBufferSampler();
         VkSampler                                                         mGBufferSampler{};

@@ -84,16 +84,22 @@ namespace foray {
         UpdateDescriptors();
     }
 
-    void RestirStage::RecordFrame(base::FrameRenderInfo& renderInfo)
+    void RestirStage::RecordFrame(VkCommandBuffer commandBuffer, base::FrameRenderInfo& renderInfo)
     {
+        // set intial layouts of prev frame buffers in layout cache
+        for(core::ManagedImage& img : mPrevFrameBuffers)
+        {
+            renderInfo.GetImageLayoutCache().Set(img, VK_IMAGE_LAYOUT_GENERAL);
+        }
+
         uint32_t frameNumber                    = renderInfo.GetFrameNumber();
         mRestirConfigurationUbo.GetData().Frame = frameNumber;
         mRestirConfigurationUbo.UpdateTo(frameNumber);
-        mRestirConfigurationUbo.CmdCopyToDevice(frameNumber, renderInfo.GetCommandBuffer());
-        RaytracingStage::RecordFrame(renderInfo);
+        mRestirConfigurationUbo.CmdCopyToDevice(frameNumber, commandBuffer);
+        RaytracingStage::RecordFrame(commandBuffer, renderInfo);
 
         // copy gbuffer to prev frame
-        CopyGBufferToPrevFrameBuffers(renderInfo);
+        CopyGBufferToPrevFrameBuffers(commandBuffer, renderInfo);
     }
 
     // TODO: cleanup setup/update descriptors .. common interface
@@ -146,12 +152,10 @@ namespace foray {
         VkImageAspectFlags       aspectMask            = VK_IMAGE_ASPECT_COLOR_BIT;
 
         core::ManagedImage::QuickTransition t;
-        t.SrcStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
-        t.DstStage = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
-        t.SrcMask  = 0;
-        t.DstMask  = 0;
-        t.AspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
-        t.NewImageLayout = VK_IMAGE_LAYOUT_GENERAL;
+        t.SrcStageMask = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+        t.DstStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
+        t.AspectMask   = VK_IMAGE_ASPECT_DEPTH_BIT;
+        t.NewLayout    = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
         mPrevFrameBuffers[static_cast<int32_t>(PreviousFrame::Depth)].Create(mContext, memoryUsage, allocationCreateFlags, extent, depthUsageFlags, depthFormat, intialLayout,
                                                                              VK_IMAGE_ASPECT_DEPTH_BIT, "PrevFrameDepth");
@@ -195,10 +199,8 @@ namespace foray {
         Module.Destroy();
     }
 
-    void RestirStage::CopyGBufferToPrevFrameBuffers(base::FrameRenderInfo& renderInfo)
+    void RestirStage::CopyGBufferToPrevFrameBuffers(VkCommandBuffer commandBuffer, base::FrameRenderInfo& renderInfo)
     {
-        VkCommandBuffer commandBuffer = renderInfo.GetCommandBuffer();
-
         struct CopyInfo
         {
             core::ManagedImage* GBufferImage;
@@ -214,23 +216,29 @@ namespace foray {
 
         for(auto& copyInfo : copyInfos)
         {
-            // determine image type
-
-            // transition gbuffer image layout
-            core::ManagedImage::QuickTransition t;
-            t.NewImageLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-            t.DstStage       = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
-            t.SrcStage       = VK_PIPELINE_STAGE_TRANSFER_BIT;
-            t.DstMask        = 0;
-            t.SrcMask        = VK_ACCESS_TRANSFER_READ_BIT;
-            t.AspectMask     = copyInfo.AspectFlags;
-            copyInfo.GBufferImage->TransitionLayout(t, commandBuffer);
-
-            // transition prev img layout
             core::ManagedImage* prevFrameImage = &mPrevFrameBuffers[static_cast<uint32_t>(copyInfo.PrevFrameId)];
-            t.NewImageLayout                   = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-            t.SrcMask                          = VK_ACCESS_TRANSFER_WRITE_BIT;
-            prevFrameImage->TransitionLayout(t, commandBuffer);
+            {
+                std::vector<VkImageMemoryBarrier> imageMemoryBarriers;
+                imageMemoryBarriers.reserve(2);
+                // transition gbuffer image layout
+                core::ImageLayoutCache::Barrier barrier;
+                barrier.NewLayout                   = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+                barrier.SrcAccessMask               = VK_ACCESS_MEMORY_WRITE_BIT;
+                barrier.DstAccessMask               = VK_ACCESS_TRANSFER_READ_BIT;
+                barrier.SubresourceRange.aspectMask = copyInfo.AspectFlags;
+                // gbuffer transition
+                imageMemoryBarriers.push_back(renderInfo.GetImageLayoutCache().Set(copyInfo.GBufferImage, barrier));
+
+                // transition prev img layout
+                renderInfo.GetImageLayoutCache().Set(prevFrameImage, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+                barrier.NewLayout     = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+                barrier.SrcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+                barrier.DstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+                imageMemoryBarriers.push_back(renderInfo.GetImageLayoutCache().Set(prevFrameImage, barrier));
+
+                vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, imageMemoryBarriers.size(),
+                                     imageMemoryBarriers.data());
+            }
 
             // copy image
             {
@@ -246,21 +254,19 @@ namespace foray {
                 region.dstSubresource.baseArrayLayer = 0;
                 region.dstSubresource.layerCount     = 1;
                 region.dstSubresource.mipLevel       = 0;
-                vkCmdCopyImage(commandBuffer, copyInfo.GBufferImage->GetImage(), copyInfo.GBufferImage->GetImageLayout(), prevFrameImage->GetImage(),
-                               prevFrameImage->GetImageLayout(), 1, &region);
+                vkCmdCopyImage(commandBuffer, copyInfo.GBufferImage->GetImage(), VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, prevFrameImage->GetImage(),
+                               VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
             }
 
-            // transition layouts back
-            t.NewImageLayout = VK_IMAGE_LAYOUT_GENERAL;
-            t.DstStage       = VK_PIPELINE_STAGE_TRANSFER_BIT;
-            t.SrcStage       = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
-            t.DstMask        = VK_ACCESS_TRANSFER_READ_BIT;
-            t.SrcMask        = 0;
-            copyInfo.GBufferImage->TransitionLayout(t, commandBuffer);
-
-            // transition prev img layout
-            t.DstMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-            prevFrameImage->TransitionLayout(t, commandBuffer);
+            {
+                core::ImageLayoutCache::Barrier barrier;
+                // transition prev img layout
+                barrier.NewLayout                   = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+                barrier.SrcAccessMask               = VK_ACCESS_TRANSFER_WRITE_BIT;
+                barrier.DstAccessMask               = 0;
+                barrier.SubresourceRange.aspectMask = copyInfo.AspectFlags;
+                renderInfo.GetImageLayoutCache().CmdBarrier(commandBuffer, prevFrameImage, barrier, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT);
+            }
         }
     }
 
@@ -299,7 +305,7 @@ namespace foray {
 
         for(uint32_t i = 0; i < mNumPreviousFrameBuffers; i++)
         {
-            mBufferInfos_PrevFrameBuffers[i].imageLayout = mPrevFrameBuffers[i].GetImageLayout();
+            mBufferInfos_PrevFrameBuffers[i].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
             mBufferInfos_PrevFrameBuffers[i].imageView   = mPrevFrameBuffers[i].GetImageView();
             mBufferInfos_PrevFrameBuffers[i].sampler     = mGBufferSampler;
         }
@@ -360,7 +366,7 @@ namespace foray {
         for(size_t i = 0; i < gbufferImageCount; i++)
         {
             mGBufferImageInfos[i].imageView   = gbufferImages[i]->GetImageView();
-            mGBufferImageInfos[i].imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+            mGBufferImageInfos[i].imageLayout = VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL;
             mGBufferImageInfos[i].sampler     = mGBufferSampler;
         }
         mGBufferImageInfos[4].imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;

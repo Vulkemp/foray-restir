@@ -14,13 +14,14 @@
 
 #include "structs.hpp"
 
-void RestirProject::BeforeInstanceCreate(vkb::InstanceBuilder& instanceBuilder) {
-   /* instanceBuilder.add_validation_feature_enable(VK_VALIDATION_FEATURE_ENABLE_DEBUG_PRINTF_EXT);
+void RestirProject::BeforeInstanceCreate(vkb::InstanceBuilder& instanceBuilder)
+{
+    /* instanceBuilder.add_validation_feature_enable(VK_VALIDATION_FEATURE_ENABLE_DEBUG_PRINTF_EXT);
     instanceBuilder.enable_extension(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
     instanceBuilder.enable_extension(VK_EXT_DEBUG_REPORT_EXTENSION_NAME);*/
 }
 
-void RestirProject::BeforeDeviceBuilding(vkb::DeviceBuilder& deviceBuilder){}
+void RestirProject::BeforeDeviceBuilding(vkb::DeviceBuilder& deviceBuilder) {}
 
 void RestirProject::BeforePhysicalDeviceSelection(vkb::PhysicalDeviceSelector& pds)
 {
@@ -153,8 +154,8 @@ void RestirProject::LoadEnvironmentMap()
         .depth  = 1,
     };
 
-    foray::core::ManagedImage::CreateInfo ci("Environment map", VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                                             VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, hdrVkFormat, ext3D);
+    foray::core::ManagedImage::CreateInfo ci("Environment map", VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, hdrVkFormat,
+                                             ext3D);
 
     imageLoader.InitManagedImage(&mContext, &mSphericalEnvMap, ci);
     imageLoader.Destroy();
@@ -204,9 +205,9 @@ void RestirProject::CollectEmissiveTriangles()
 
         // TODO: world matrix of primitive has to be considered for triangle position.
         shader::TriLight& triLight = mTriangleLights[i / 3];
-        triLight.p1        = glm::vec4(p1_vec3, 1.0);
-        triLight.p2        = glm::vec4(p2_vec3, 1.0);
-        triLight.p3        = glm::vec4(p3_vec3, 1.0);
+        triLight.p1                = glm::vec4(p1_vec3, 1.0);
+        triLight.p2                = glm::vec4(p2_vec3, 1.0);
+        triLight.p3                = glm::vec4(p3_vec3, 1.0);
 
         // material index for shader lookup
         triLight.materialIndex = materialIndex;
@@ -302,42 +303,40 @@ void RestirProject::ConfigureStages()
     mImguiStage.Init(&mContext, mOutputs[mCurrentOutput]);
     PrepareImguiWindow();
 
-    // �nit copy stage
-    mImageToSwapchainStage.Init(&mContext, mOutputs[mCurrentOutput],
-                                foray::stages::ImageToSwapchainStage::PostCopy{.AccessFlags      = (VkAccessFlagBits::VK_ACCESS_SHADER_WRITE_BIT),
-                                                                               .ImageLayout      = (VkImageLayout::VK_IMAGE_LAYOUT_GENERAL),
-                                                                               .QueueFamilyIndex = (mContext.QueueGraphics)});
+    // Init copy stage
+    mImageToSwapchainStage.Init(&mContext, mOutputs[mCurrentOutput]);
 }
 
 void RestirProject::RecordCommandBuffer(foray::base::FrameRenderInfo& renderInfo)
 {
-    mScene->Update(renderInfo);
-    mGbufferStage.RecordFrame(renderInfo);
+    foray::core::DeviceCommandBuffer& commandBuffer = renderInfo.GetPrimaryCommandBuffer();
+    commandBuffer.Begin();
+
+    mScene->Update(renderInfo, commandBuffer);
+    mGbufferStage.RecordFrame(commandBuffer, renderInfo);
 
     // after gbuffer stage, transform depth from attachment optimal to read optimal
     {
-        VkCommandBuffer cmdBuffer = renderInfo.GetCommandBuffer();
-        mGbufferStage.GetDepthBuffer()->SetLayoutChanged(VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL);
+        foray::core::ImageLayoutCache::Barrier barrier;
+        barrier.SrcAccessMask = 0;
+        barrier.DstAccessMask = 0;
+        barrier.NewLayout     = VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL;
+        barrier.SubresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
 
-        foray::core::ManagedImage::LayoutTransitionInfo transitionInfo;
-        transitionInfo.CommandBuffer               = cmdBuffer;
-        transitionInfo.SubresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
-        transitionInfo.OldImageLayout              = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
-        transitionInfo.NewImageLayout              = VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL;
-        transitionInfo.BarrierSrcAccessMask        = 0;
-        transitionInfo.BarrierDstAccessMask        = 0;
-        transitionInfo.SrcStage                    = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
-        transitionInfo.DstStage                    = VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR;
-        mGbufferStage.GetDepthBuffer()->TransitionLayout(transitionInfo);
+        renderInfo.GetImageLayoutCache().CmdBarrier(commandBuffer, mGbufferStage.GetDepthBuffer(), barrier, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
+                                                    VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR);
     }
 
-    mRestirStage.RecordFrame(renderInfo);
+    mRestirStage.RecordFrame(commandBuffer, renderInfo);
 
     // draw imgui windows
-    mImguiStage.RecordFrame(renderInfo);
+    mImguiStage.RecordFrame(commandBuffer, renderInfo);
 
     // copy final image to swapchain
-    mImageToSwapchainStage.RecordFrame(renderInfo);
+    mImageToSwapchainStage.RecordFrame(commandBuffer, renderInfo);
+
+    renderInfo.GetInFlightFrame()->PrepareSwapchainImageForPresent(commandBuffer, renderInfo.GetImageLayoutCache());
+    commandBuffer.Submit(mContext.QueueGraphics);
 }
 
 void RestirProject::QueryResultsAvailable(uint64_t frameIndex)

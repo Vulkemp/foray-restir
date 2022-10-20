@@ -19,7 +19,6 @@
 #include <vector>
 
 #include "restirstage.hpp"
-#include "stages/foray_flipimage.hpp"
 #include "stages/foray_gbuffer.hpp"
 #include "stages/foray_imagetoswapchain.hpp"
 #include "stages/foray_imguistage.hpp"
