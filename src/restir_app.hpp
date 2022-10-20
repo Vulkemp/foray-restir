@@ -8,8 +8,8 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
-#include <fstream>
 #include <foray_glm.hpp>
+#include <fstream>
 #include <iostream>
 #include <limits>
 #include <optional>
@@ -25,16 +25,20 @@
 #include "stages/foray_raytracingstage.hpp"
 #include <osi/foray_env.hpp>
 
+#include "structs.hpp"
+#include <base/foray_defaultappbase.hpp>
 #include <scene/foray_scenegraph.hpp>
 #include <stdint.h>
 #include <util/foray_noisesource.hpp>
-#include <base/foray_defaultappbase.hpp>
-#include "structs.hpp"
+
+#include "restirstage.hpp"
 
 class RestirProject : public foray::base::DefaultAppBase
 {
+    friend foray::RestirStage;
+
   public:
-    RestirProject()  = default;
+    RestirProject() = default;
     ~RestirProject(){};
 
   protected:
@@ -60,10 +64,14 @@ class RestirProject : public foray::base::DefaultAppBase
     void loadScene();
     void LoadEnvironmentMap();
     void GenerateNoiseSource();
-    void CollectEmissiveTriangles();
+
+    void                                                              CollectEmissiveTriangles();
+    void                                                              UploadLightsToGpu();
+    foray::core::ManagedBuffer                                        mTriangleLightsBuffer;
+    std::vector<VkDescriptorBufferInfo>                               mTriangleLightsBufferInfos;
+    std::shared_ptr<foray::core::DescriptorSetHelper::DescriptorInfo> MakeDescriptorInfos_TriangleLights(VkShaderStageFlags shaderStage);
 
     std::vector<shader::TriLight> mTriangleLights;
-    void UploadLightsToGpu();
 
     /// @brief generates a GBuffer (Albedo, Positions, Normal, Motion Vectors, Mesh Instance Id as output images)
     foray::stages::GBufferStage mGbufferStage;
@@ -81,8 +89,8 @@ class RestirProject : public foray::base::DefaultAppBase
     void ConfigureStages();
 
     std::unordered_map<std::string_view, foray::core::ManagedImage*> mOutputs;
-    std::string_view                                         mCurrentOutput = "";
-    bool                                                     mOutputChanged = false;
+    std::string_view                                                 mCurrentOutput = "";
+    bool                                                             mOutputChanged = false;
 
 #ifdef ENABLE_GBUFFER_BENCH
     foray::BenchmarkLog mDisplayedLog;
@@ -91,10 +99,3 @@ class RestirProject : public foray::base::DefaultAppBase
     void UpdateOutputs();
     void ApplyOutput();
 };
-
-int main(int argv, char** args)
-{
-    foray::osi::OverrideCurrentWorkingDirectory(CWD_OVERRIDE_PATH);
-    RestirProject project;
-    return project.Run();
-}

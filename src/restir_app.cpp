@@ -14,18 +14,24 @@
 
 #include "structs.hpp"
 
+#define USE_PRINTF
+
 void RestirProject::BeforeInstanceCreate(vkb::InstanceBuilder& instanceBuilder)
 {
-    /* instanceBuilder.add_validation_feature_enable(VK_VALIDATION_FEATURE_ENABLE_DEBUG_PRINTF_EXT);
+#ifdef USE_PRINTF
+    instanceBuilder.add_validation_feature_enable(VK_VALIDATION_FEATURE_ENABLE_DEBUG_PRINTF_EXT);
     instanceBuilder.enable_extension(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
-    instanceBuilder.enable_extension(VK_EXT_DEBUG_REPORT_EXTENSION_NAME);*/
+    instanceBuilder.enable_extension(VK_EXT_DEBUG_REPORT_EXTENSION_NAME);
+#endif
 }
 
 void RestirProject::BeforeDeviceBuilding(vkb::DeviceBuilder& deviceBuilder) {}
 
 void RestirProject::BeforePhysicalDeviceSelection(vkb::PhysicalDeviceSelector& pds)
 {
-    //pds.add_required_extension(VK_KHR_SHADER_NON_SEMANTIC_INFO_EXTENSION_NAME);
+#ifdef USE_PRINTF
+    pds.add_required_extension(VK_KHR_SHADER_NON_SEMANTIC_INFO_EXTENSION_NAME);
+#endif
 }
 
 // And this is the callback that the validator will call
@@ -48,31 +54,33 @@ VkBool32 myDebugCallback(VkDebugReportFlagsEXT      flags,
 
 void RestirProject::Init()
 {
+#ifdef USE_PRINTF
     VkDebugReportCallbackEXT debugCallbackHandle;
 
-    //// Populate the VkDebugReportCallbackCreateInfoEXT
-    //VkDebugReportCallbackCreateInfoEXT ci = {};
-    //ci.sType                              = VK_STRUCTURE_TYPE_DEBUG_REPORT_CALLBACK_CREATE_INFO_EXT;
-    //ci.pfnCallback                        = myDebugCallback;
-    //ci.flags                              = VK_DEBUG_REPORT_INFORMATION_BIT_EXT;
-    //ci.pUserData                          = nullptr;
+    // Populate the VkDebugReportCallbackCreateInfoEXT
+    VkDebugReportCallbackCreateInfoEXT ci = {};
+    ci.sType                              = VK_STRUCTURE_TYPE_DEBUG_REPORT_CALLBACK_CREATE_INFO_EXT;
+    ci.pfnCallback                        = myDebugCallback;
+    ci.flags                              = VK_DEBUG_REPORT_INFORMATION_BIT_EXT;
+    ci.pUserData                          = nullptr;
 
-    //PFN_vkCreateDebugReportCallbackEXT pfn_vkCreateDebugReportCallbackEXT =
-    //    reinterpret_cast<PFN_vkCreateDebugReportCallbackEXT>(vkGetDeviceProcAddr(mContext.Device, "vkCreateDebugReportCallbackEXT"));
-    //
-    //PFN_vkCreateDebugReportCallbackEXT CreateDebugReportCallback = VK_NULL_HANDLE;
-    //CreateDebugReportCallback                                    = (PFN_vkCreateDebugReportCallbackEXT)vkGetInstanceProcAddr(mContext.Instance, "vkCreateDebugReportCallbackEXT");
+    PFN_vkCreateDebugReportCallbackEXT pfn_vkCreateDebugReportCallbackEXT =
+        reinterpret_cast<PFN_vkCreateDebugReportCallbackEXT>(vkGetDeviceProcAddr(mContext.Device, "vkCreateDebugReportCallbackEXT"));
 
-    //// Create the callback handle
-    //CreateDebugReportCallback(mContext.Instance, &ci, nullptr, &debugCallbackHandle);
+    PFN_vkCreateDebugReportCallbackEXT CreateDebugReportCallback = VK_NULL_HANDLE;
+    CreateDebugReportCallback                                    = (PFN_vkCreateDebugReportCallbackEXT)vkGetInstanceProcAddr(mContext.Instance, "vkCreateDebugReportCallbackEXT");
 
+    // Create the callback handle
+    CreateDebugReportCallback(mContext.Instance, &ci, nullptr, &debugCallbackHandle);
+#endif
 
     foray::logger()->set_level(spdlog::level::debug);
     LoadEnvironmentMap();
     GenerateNoiseSource();
     loadScene();
-    ConfigureStages();
     CollectEmissiveTriangles();
+    UploadLightsToGpu();
+    ConfigureStages();
 }
 
 void RestirProject::Update(float delta)
@@ -189,45 +197,53 @@ void RestirProject::CollectEmissiveTriangles()
         if(primitives.size() > 1)
             continue;
 
-        vertices      = &primitives[0].Vertices;
-        indices       = &primitives[0].Indices;
+        vertices      = &(primitives[0].Vertices);
+        indices       = &(primitives[0].Indices);
         materialIndex = primitives[0].MaterialIndex;
+
+        // create triangles from vertices & indices
+        mTriangleLights.resize(indices->size() / 3);
+        for(size_t i = 0; i < indices->size(); i += 3)
+        {
+            // collect vertices
+            glm::vec3 p1_vec3 = vertices->at(indices->at(i)).Pos;
+            glm::vec3 p2_vec3 = vertices->at(indices->at(i + 1)).Pos;
+            glm::vec3 p3_vec3 = vertices->at(indices->at(i + 2)).Pos;
+
+            // TODO: world matrix of primitive has to be considered for triangle position.
+            shader::TriLight& triLight = mTriangleLights[i / 3];
+            triLight.p1                = glm::vec4(p1_vec3, 1.0);
+            triLight.p2                = glm::vec4(p2_vec3, 1.0);
+            triLight.p3                = glm::vec4(p3_vec3, 1.0);
+
+            // material index for shader lookup
+            triLight.materialIndex = materialIndex;
+
+            // compute triangle area
+            glm::vec3 normal    = glm::cross(p2_vec3 - p1_vec3, p3_vec3 - p1_vec3);
+            triLight.normal  = glm::vec4(normal.x, normal.y, normal.z, normal.length());
+        }
     }
 
-    // create triangles from vertices & indices
-    mTriangleLights.resize(indices->size() / 3);
-    for(size_t i = 0; i < indices->size(); i += 3)
-    {
-        // collect vertices
-        glm::vec3 p1_vec3 = vertices->at(indices->at(i)).Pos;
-        glm::vec3 p2_vec3 = vertices->at(indices->at(i + 1)).Pos;
-        glm::vec3 p3_vec3 = vertices->at(indices->at(i + 2)).Pos;
-
-        // TODO: world matrix of primitive has to be considered for triangle position.
-        shader::TriLight& triLight = mTriangleLights[i / 3];
-        triLight.p1                = glm::vec4(p1_vec3, 1.0);
-        triLight.p2                = glm::vec4(p2_vec3, 1.0);
-        triLight.p3                = glm::vec4(p3_vec3, 1.0);
-
-        // material index for shader lookup
-        triLight.materialIndex = materialIndex;
-
-        // compute triangle area
-        glm::vec3 normal    = glm::cross(p2_vec3 - p1_vec3, p3_vec3 - p1_vec3);
-        triLight.normalArea = normal.length();
-    }
 }
 
 void RestirProject::UploadLightsToGpu()
 {
-    foray::core::ManagedBuffer mTriangleLightsBuffer;
-
     VkBufferUsageFlags       bufferUsage    = VkBufferUsageFlagBits::VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
     VkDeviceSize             bufferSize     = mTriangleLights.size() * sizeof(shader::TriLight);
     VmaMemoryUsage           bufferMemUsage = VmaMemoryUsage::VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
     VmaAllocationCreateFlags allocFlags     = 0;
     mTriangleLightsBuffer.Create(&mContext, bufferUsage, bufferSize, bufferMemUsage, allocFlags, "TriangleLightsBuffer");
     mTriangleLightsBuffer.WriteDataDeviceLocal(mTriangleLights.data(), bufferSize);
+}
+
+std::shared_ptr<foray::core::DescriptorSetHelper::DescriptorInfo> RestirProject::MakeDescriptorInfos_TriangleLights(VkShaderStageFlags shaderStage) {
+    mTriangleLightsBufferInfos.resize(1);
+    mTriangleLightsBuffer.FillVkDescriptorBufferInfo(&mTriangleLightsBufferInfos[0]);
+    auto descriptorInfo = std::make_shared<foray::core::DescriptorSetHelper::DescriptorInfo>();
+    descriptorInfo->Init(VkDescriptorType::VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, shaderStage);
+    descriptorInfo->AddDescriptorSet(&mTriangleLightsBufferInfos);
+    return descriptorInfo;
 }
 
 void RestirProject::Destroy()
@@ -240,6 +256,7 @@ void RestirProject::Destroy()
     mImguiStage.Destroy();
     mRestirStage.Destroy();
     mSphericalEnvMap.Destroy();
+    mTriangleLightsBuffer.Destroy();
 
     DefaultAppBase::Destroy();
 }
@@ -295,7 +312,7 @@ void RestirProject::ConfigureStages()
     auto albedoImage = mGbufferStage.GetColorAttachmentByName(foray::stages::GBufferStage::Albedo);
     auto normalImage = mGbufferStage.GetColorAttachmentByName(foray::stages::GBufferStage::WorldspaceNormal);
 
-    mRestirStage.Init(&mContext, mScene.get(), &mSphericalEnvMap, &mNoiseSource.GetImage(), &mGbufferStage);
+    mRestirStage.Init(&mContext, mScene.get(), &mSphericalEnvMap, &mNoiseSource.GetImage(), &mGbufferStage, this);
     auto rtImage = mRestirStage.GetColorAttachmentByName(foray::stages::RaytracingStage::RaytracingRenderTargetName);
 
     UpdateOutputs();
@@ -318,9 +335,9 @@ void RestirProject::RecordCommandBuffer(foray::base::FrameRenderInfo& renderInfo
     // after gbuffer stage, transform depth from attachment optimal to read optimal
     {
         foray::core::ImageLayoutCache::Barrier barrier;
-        barrier.SrcAccessMask = 0;
-        barrier.DstAccessMask = 0;
-        barrier.NewLayout     = VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL;
+        barrier.SrcAccessMask               = 0;
+        barrier.DstAccessMask               = 0;
+        barrier.NewLayout                   = VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL;
         barrier.SubresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
 
         renderInfo.GetImageLayoutCache().CmdBarrier(commandBuffer, mGbufferStage.GetDepthBuffer(), barrier, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,

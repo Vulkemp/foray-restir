@@ -3,7 +3,7 @@
 #extension GL_KHR_vulkan_glsl : enable // Vulkan-specific syntax
 #extension GL_GOOGLE_include_directive : enable // Include files
 #extension GL_EXT_ray_tracing : enable // Raytracing
-//#extension GL_EXT_debug_printf : enable
+#extension GL_EXT_debug_printf : enable
 
 // Include structs and bindings
 #ifndef includes
@@ -43,8 +43,8 @@ struct TriLight
         vec4  p1;
         vec4  p2;
         vec4  p3;
+		vec4  normal;
         uint  materialIndex;
-        float normalArea;
     };
 #include "restir/restirUtils.glsl"
 
@@ -57,9 +57,8 @@ layout(binding = 13,  set = 0) buffer PrevFrameReservoirs { Reservoir prevFrameR
 #define MOTION 3
 #define DEPTH 4
 layout(set = 0, binding = 14) uniform sampler2D GBufferTextures[5];
-layout(set = 0, binding = 16) uniform sampler2D PreviousFrameImages[4];
-//layout(set = 0, binding = 16) buffer PrevFrameDepthBufferWrite{ float depth[]; } prevFrameDepthBufferWrite;
-//layout(set = 0, binding = 15) buffer TriLights{ TriLight triLights[]; } triLights;
+layout(set = 0, binding = 15) uniform sampler2D PreviousFrameImages[4];
+layout(set = 0, binding = 16) buffer TriLights{ TriLight triLights[]; } triLights;
 
 // Declare hitpayloads
 
@@ -115,6 +114,7 @@ void main()
 
 	// test gbuffer 
 	vec3 albedo = texelFetch(GBufferTextures[WORLDNORMAL], ivec2(pixelCoord), 0).xyz;
+	vec3 worldPos = texelFetch(GBufferTextures[WORLDPOS], ivec2(pixelCoord), 0).xyz;
 	imageStore(ImageOutput, ivec2(pixelCoord.xy), vec4(albedo, 1));
 
 	// testing depth buffers
@@ -127,47 +127,59 @@ void main()
 
 	float depth = texelFetch(GBufferTextures[DEPTH], ivec2(pixelCoord), 0).x;
 
-//	Reservoir res = newReservoir();
-//
-//	// RestirConfig
-//	for (int i = 0; i < RestirConfiguration.InitialLightSampleCount; ++i) {
-//		int selected_idx;
-//		float lightSampleProb;
-//
-//		// chose a triangle with importance sampling by light power
-//		//aliasTableSample(randFloat(rand), randFloat(rand), selected_idx, lightSampleProb);
-//
-//		uint randomNr = lcgUint(randomSeed);
-//		selected_idx = mod(randomNr, RestirConfiguration.NumTriLights); 
-//
-//		vec4 lightNormal;
-//		float lightSampleLum;
-//		int lightSampleIndex;
-//
-//		// pick a random point on the triangle light
-//		TriLight light = triLights.triLights[selected_idx];
-//		vec3 lightSamplePos = pickPointOnTriangle(lcgFloat(randomSeed), lcgFloat(randomSeed), light.p1.xyz, light.p2.xyz, light.p3.xyz);
-//		
-//		// TODO: calculate luminance from material id
-//		// lightSampleLum = light.emission_luminance.w;
-//		float lightSampleLum = 1.0;
-//
-//		vec3 wi = normalize(worldPos - lightSamplePos);
-//		vec3 normal = light.normalArea.xyz;
-//		lightSampleProb /= abs(dot(wi, normal)) * light.normalArea.w;
-//		lightNormal = vec4(normal, 1.0f);
-//
-//
-//		// evaluate light emission, based on view angle and material brdf
-////		float pHat = evaluatePHat(
-////			worldPos, lightSamplePos, uniforms.cameraPos.xyz,
-////			normal, lightNormal.xyz, lightNormal.w > 0.5f,
-////			albedoLum, lightSampleLum, roughnessMetallic.x, roughnessMetallic.y
-////		);
-//		float pHat = 1.0f;
-//
-//		addSampleToReservoir(res, lightSamplePos, lightNormal, lightSampleLum, lightSampleIndex, pHat, lightSampleProb, rand);
-//	}
+	Reservoir res = newReservoir();
+
+	//debugPrintfEXT("RESTIR CONFIG initla sample count = %d", RestirConfig.InitialLightSampleCount);
+	// RestirConfig
+	for (int i = 0; i < RestirConfig.InitialLightSampleCount; ++i) {
+
+		float lightSampleProb;
+		// chose a triangle with importance sampling by light power
+		//aliasTableSample(randFloat(rand), randFloat(rand), selected_idx, lightSampleProb);
+		lightSampleProb = 1.0f/32.0f; // probabiliy that light was sampled
+
+		uint randomNr = lcgUint(randomSeed);
+		//debugPrintfEXT(" randomnr = %d \n", randomNr);
+		uint selected_idx = randomNr % RestirConfig.NumTriLights;
+		debugPrintfEXT("light index % d \n", selected_idx);
+		vec4 lightNormal;
+
+		// pick a random point on the triangle light
+		TriLight light = triLights.triLights[selected_idx];
+		vec3 lightSamplePos = pickPointOnTriangle(lcgFloat(randomSeed), lcgFloat(randomSeed), light.p1.xyz, light.p2.xyz, light.p3.xyz);
+		
+		// TODO: calculate luminance from material id
+		// lightSampleLum = light.emission_luminance.w;
+		float lightSampleLum = 1.0;
+
+		vec3 wi = normalize(worldPos - lightSamplePos);
+		vec3 normal = normalize(vec3(light.normal.xyz));
+		lightSampleProb /= abs(dot(wi, normal)) * light.normal.w;
+		lightNormal = vec4(normal, 1.0f);
+
+
+		// evaluate light emission, based on view angle and material brdf
+//		float pHat = evaluatePHat(
+//			worldPos, lightSamplePos, uniforms.cameraPos.xyz,
+//			normal, lightNormal.xyz, lightNormal.w > 0.5f,
+//			albedoLum, lightSampleLum, roughnessMetallic.x, roughnessMetallic.y
+//		);
+		float pHat = 1.0f;
+
+		addSampleToReservoir(res, lightSamplePos, lightNormal, lightSampleLum, selected_idx, pHat, lightSampleProb, randomSeed);
+	}
+
+	// print Reservoir
+	debugPrintfEXT("light index % d \n", res.samples[0].lightIndex);
+	//struct LightSample {
+//		vec4 position_emissionLum;
+//		vec4 normal;
+//		uint lightIndex;
+//		float pHat;
+//		float sumWeights;
+//		float w;
+//	};
+
 //
 //	uint reservoirIndex = pixelCoord.y * uniforms.screenSize.x + pixelCoord.x;
 //	

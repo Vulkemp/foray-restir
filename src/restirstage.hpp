@@ -4,6 +4,8 @@
 #include <stages/foray_raytracingstage.hpp>
 #include <util/foray_managedubo.hpp>
 
+class RestirProject;
+
 // number of samples to store in a single reservoir
 #define RESERVOIR_SIZE 4
 
@@ -25,6 +27,7 @@ namespace foray {
             uint32_t   SpatialNeighbors;
             float      SpatialRadius;
             int32_t    Flags;
+            uint32_t   NumTriLights;
         };
 
         struct Reservoir
@@ -38,7 +41,8 @@ namespace foray {
                           foray::scene::Scene*          scene,
                           foray::core::ManagedImage*    envmap,
                           foray::core::ManagedImage*    noiseSource,
-                          foray::stages::GBufferStage*  gbufferStage);
+                          foray::stages::GBufferStage*  gbufferStage,
+                          RestirProject*                restirApp);
         virtual void CreateRaytraycingPipeline() override;
         virtual void OnShadersRecompiled() override;
         virtual void OnResized(const VkExtent2D& extent) override;
@@ -47,9 +51,14 @@ namespace foray {
 
         virtual void SetupDescriptors() override;
 
+        virtual void CreateFixedSizeComponents() override;
+        virtual void DestroyFixedComponents() override;
+        virtual void CreateResolutionDependentComponents() override;
+        virtual void DestroyResolutionDependentComponents() override;
+
+
         virtual void Destroy() override;
         virtual void DestroyShaders() override;
-        ;
 
         struct RtStageShader
         {
@@ -61,6 +70,7 @@ namespace foray {
         };
 
       protected:
+        RestirProject* mRestirApp{};
         virtual void UpdateDescriptors() override;
         virtual void PrepareAttachments() override;
 

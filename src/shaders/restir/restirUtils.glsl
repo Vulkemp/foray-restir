@@ -8,7 +8,7 @@
 struct LightSample {
 	vec4 position_emissionLum;
 	vec4 normal;
-	int lightIndex;
+	uint lightIndex;
 	float pHat;
 	float sumWeights;
 	float w;
@@ -26,7 +26,7 @@ void updateReservoirAt(
 	vec3 position,
 	vec4 normal,
 	float emissionLum,
-	int lightIdx,
+	uint lightIdx,
 	float pHat,
 	float w,
 	uint randomSeed
@@ -42,8 +42,8 @@ void updateReservoirAt(
 		res.samples[i].w = w;
 	}
 }
-
-void addSampleToReservoir(inout Reservoir res, vec3 position, vec4 normal, float emissionLum, int lightIdx, float pHat, float sampleP, uint randomSeed) {
+//addSampleToReservoir(res, lightSamplePos, lightNormal, lightSampleLum, selected_idx, pHat, lightSampleProb, randomSeed);
+void addSampleToReservoir(inout Reservoir res, vec3 position, vec4 normal, float emissionLum, uint lightIdx, float pHat, float sampleP, uint randomSeed) {
 	float weight = pHat / sampleP;
 	res.numStreamSamples += 1;
 

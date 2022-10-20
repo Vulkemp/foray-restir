@@ -1,14 +1,16 @@
 #include "restirstage.hpp"
 #include <core/foray_shadermanager.hpp>
-#include <util/foray_createinfotemplates.hpp>
+#include "restir_app.hpp"
 
 namespace foray {
     void RestirStage::Init(const foray::core::VkContext* context,
                            foray::scene::Scene*          scene,
                            foray::core::ManagedImage*    envmap,
                            foray::core::ManagedImage*    noiseSource,
-                           foray::stages::GBufferStage*  gbufferStage)
+                           foray::stages::GBufferStage*  gbufferStage,
+                           RestirProject*                restirApp)
     {
+        mRestirApp    = restirApp;
         mContext      = context;
         mScene        = scene;
         mGBufferStage = gbufferStage;
@@ -38,9 +40,11 @@ namespace foray {
 
         mRestirConfigurationUbo.Create(mContext, "RestirConfigurationUbo");
 
-        RestirConfiguration& restirConfig = mRestirConfigurationUbo.GetData();
-        restirConfig.ReservoirSize        = RESERVOIR_SIZE;
-        restirConfig.ScreenSize           = glm::uvec2(mContext->Swapchain.extent.width, mContext->Swapchain.extent.height);
+        RestirConfiguration& restirConfig    = mRestirConfigurationUbo.GetData();
+        restirConfig.ReservoirSize           = RESERVOIR_SIZE;
+        restirConfig.InitialLightSampleCount = 32;  // number of samples to initally sample?
+        restirConfig.ScreenSize              = glm::uvec2(mContext->Swapchain.extent.width, mContext->Swapchain.extent.height);
+        restirConfig.NumTriLights            = 12; // TODO: get from collect emissive triangles
 
         mRestirConfigurationBufferInfos.resize(1);
 
@@ -102,6 +106,37 @@ namespace foray {
         CopyGBufferToPrevFrameBuffers(commandBuffer, renderInfo);
     }
 
+
+    void RestirStage::CreateFixedSizeComponents()
+    {
+        RaytracingStage::CreateFixedSizeComponents();
+    }
+
+    void RestirStage::DestroyFixedComponents()
+    {
+        mRestirConfigurationUbo.Destroy();
+        vkDestroySampler(mContext->Device, mGBufferSampler, nullptr);
+        RaytracingStage::DestroyFixedComponents();
+    }
+
+    void RestirStage::CreateResolutionDependentComponents()
+    {
+        RaytracingStage::CreateResolutionDependentComponents();
+    }
+
+    void RestirStage::DestroyResolutionDependentComponents()
+    {
+        RaytracingStage::DestroyResolutionDependentComponents();
+        for(core::ManagedImage& image : mPrevFrameBuffers)
+        {
+            image.Destroy();
+        }
+        for(size_t i = 0; i < 2; i++)
+        {
+            mRestirStorageBuffers[i].Destroy();
+        }
+    }
+
     // TODO: cleanup setup/update descriptors .. common interface
     void RestirStage::SetupDescriptors()
     {
@@ -129,8 +164,8 @@ namespace foray {
         mDescriptorSet.SetDescriptorInfoAt(12, MakeDescriptorInfos_StorageBufferReadSource(VkShaderStageFlagBits::VK_SHADER_STAGE_RAYGEN_BIT_KHR));
         mDescriptorSet.SetDescriptorInfoAt(13, MakeDescriptorInfos_StorageBufferWriteTarget(VkShaderStageFlagBits::VK_SHADER_STAGE_RAYGEN_BIT_KHR));
         mDescriptorSet.SetDescriptorInfoAt(14, MakeDescriptorInfos_GBufferImages(VkShaderStageFlagBits::VK_SHADER_STAGE_RAYGEN_BIT_KHR));
-        mDescriptorSet.SetDescriptorInfoAt(16, MakeDescriptorInfos_PrevFrameBuffers(VkShaderStageFlagBits::VK_SHADER_STAGE_RAYGEN_BIT_KHR));
-        //mDescriptorSet.SetDescriptorInfoAt(16, MakeDescriptorInfos_PrevFrameDepthBufferWrite(VkShaderStageFlagBits::VK_SHADER_STAGE_RAYGEN_BIT_KHR));
+        mDescriptorSet.SetDescriptorInfoAt(15, MakeDescriptorInfos_PrevFrameBuffers(VkShaderStageFlagBits::VK_SHADER_STAGE_RAYGEN_BIT_KHR));
+        mDescriptorSet.SetDescriptorInfoAt(16, mRestirApp->MakeDescriptorInfos_TriangleLights(VkShaderStageFlagBits::VK_SHADER_STAGE_RAYGEN_BIT_KHR));
         RaytracingStage::UpdateDescriptors();
     }
 
