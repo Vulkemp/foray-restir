@@ -44,10 +44,16 @@ void updateReservoirAt(
 }
 //addSampleToReservoir(res, lightSamplePos, lightNormal, lightSampleLum, selected_idx, pHat, lightSampleProb, randomSeed);
 void addSampleToReservoir(inout Reservoir res, vec3 position, vec4 normal, float emissionLum, uint lightIdx, float pHat, float sampleP, uint randomSeed) {
+	
+	// weight is defined by light Strength, divided by light probability.
+	// (light prob. based on normal angle, triangle area and emissive factor)
+	// weight = absolute weight of how good we consider a sample.
 	float weight = pHat / sampleP;
 	res.numStreamSamples += 1;
-
+	//debugPrintfEXT(" absolute sample weight = %f \n", weight);
 	for (int i = 0; i < RESERVOIR_SIZE; ++i) {
+		// the probability to chose the sample as new sample is
+		// w is average weight, bcs we add sum of all weights and divide by number of elements, multiplied by light power
 		float w = (res.samples[i].sumWeights + weight) / (res.numStreamSamples * pHat);
 		updateReservoirAt(res, i, weight, position, normal, emissionLum, lightIdx, pHat, w, randomSeed);
 	}

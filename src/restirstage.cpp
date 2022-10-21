@@ -55,6 +55,7 @@ namespace foray {
 
     void RestirStage::CreateRaytraycingPipeline()
     {
+        // default shaders
         mRaygen.Create(mContext);
         mDefault_AnyHit.Create(mContext);
         mDefault_ClosestHit.Create(mContext);
@@ -63,6 +64,12 @@ namespace foray {
         mPipeline.GetRaygenSbt().SetGroup(0, &(mRaygen.Module));
         mPipeline.GetMissSbt().SetGroup(0, &(mDefault_Miss.Module));
         mPipeline.GetHitSbt().SetGroup(0, &(mDefault_ClosestHit.Module), &(mDefault_AnyHit.Module), nullptr);
+
+        // visibility test
+        mRtShader_VisibilityTestHit.Create(mContext);
+        mRtShader_VisibilityTestMiss.Create(mContext);
+        mPipeline.GetMissSbt().SetGroup(1, &(mRtShader_VisibilityTestMiss.Module));
+        mPipeline.GetHitSbt().SetGroup(1, &(mRtShader_VisibilityTestHit.Module), &(mDefault_AnyHit.Module), nullptr);
         RaytracingStage::CreateRaytraycingPipeline();
     }
 
@@ -71,7 +78,9 @@ namespace foray {
         bool rebuild = foray::core::ShaderManager::Instance().HasShaderBeenRecompiled(mRaygen.Path)
                        || foray::core::ShaderManager::Instance().HasShaderBeenRecompiled(mDefault_AnyHit.Path)
                        || foray::core::ShaderManager::Instance().HasShaderBeenRecompiled(mDefault_ClosestHit.Path)
-                       || foray::core::ShaderManager::Instance().HasShaderBeenRecompiled(mDefault_Miss.Path);
+                       || foray::core::ShaderManager::Instance().HasShaderBeenRecompiled(mDefault_Miss.Path)
+                       || foray::core::ShaderManager::Instance().HasShaderBeenRecompiled(mRtShader_VisibilityTestHit.Path)
+                       || foray::core::ShaderManager::Instance().HasShaderBeenRecompiled(mRtShader_VisibilityTestMiss.Path);
         if(rebuild)
         {
             ReloadShaders();

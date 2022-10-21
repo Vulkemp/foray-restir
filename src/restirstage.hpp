@@ -95,6 +95,9 @@ namespace foray {
         RtStageShader mDefault_ClosestHit{"shaders/ray-default/closesthit.rchit"};
         RtStageShader mDefault_Miss{"shaders/ray-default/miss.rmiss"};
 
+        RtStageShader mRtShader_VisibilityTestMiss{"shaders/restir/hwVisibilityTest.rmiss"};
+        RtStageShader mRtShader_VisibilityTestHit{"shaders/restir/hwVisibilityTest.rchit"};
+
         // previous frame infos
         enum class PreviousFrame
         {

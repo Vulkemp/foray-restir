@@ -220,8 +220,10 @@ void RestirProject::CollectEmissiveTriangles()
             triLight.materialIndex = materialIndex;
 
             // compute triangle area
-            glm::vec3 normal    = glm::cross(p2_vec3 - p1_vec3, p3_vec3 - p1_vec3);
-            triLight.normal  = glm::vec4(normal.x, normal.y, normal.z, normal.length());
+            glm::vec3 normal = vertices->at(indices->at(i)).Normal + vertices->at(indices->at(i + 1)).Normal + vertices->at(indices->at(i + 2)).Normal;
+            glm::vec3 normal_normalized = glm::normalize(normal);
+            triLight.normal             = glm::vec4(normal_normalized.x, normal_normalized.y, normal_normalized.z, normal.length());
+            foray::logger()->debug("TriLightNormal: {},{},{},{}", triLight.normal.x, triLight.normal.y, triLight.normal.z, triLight.normal.w);
         }
     }
 
@@ -229,7 +231,7 @@ void RestirProject::CollectEmissiveTriangles()
 
 void RestirProject::UploadLightsToGpu()
 {
-    VkBufferUsageFlags       bufferUsage    = VkBufferUsageFlagBits::VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+    VkBufferUsageFlags       bufferUsage    = VkBufferUsageFlagBits::VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
     VkDeviceSize             bufferSize     = mTriangleLights.size() * sizeof(shader::TriLight);
     VmaMemoryUsage           bufferMemUsage = VmaMemoryUsage::VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
     VmaAllocationCreateFlags allocFlags     = 0;
@@ -376,7 +378,7 @@ void RestirProject::OnResized(VkExtent2D size)
     UpdateOutputs();
 
     mImguiStage.OnResized(size, mOutputs[mCurrentOutput]);
-    mImageToSwapchainStage.OnResized(size, mOutputs[mCurrentOutput]);
+    mImageToSwapchainStage.OnResized(size);
 }
 
 void lUpdateOutput(std::unordered_map<std::string_view, foray::core::ManagedImage*>& map, foray::stages::RenderStage& stage, const std::string_view name)

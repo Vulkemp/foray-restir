@@ -45,6 +45,9 @@ struct TriLight
         vec4  p3;
 		vec4  normal;
         uint  materialIndex;
+		uint  reserved1;
+		uint  reserved2;
+		uint  reserved3;
     };
 #include "restir/restirUtils.glsl"
 
@@ -58,20 +61,60 @@ layout(binding = 13,  set = 0) buffer PrevFrameReservoirs { Reservoir prevFrameR
 #define DEPTH 4
 layout(set = 0, binding = 14) uniform sampler2D GBufferTextures[5];
 layout(set = 0, binding = 15) uniform sampler2D PreviousFrameImages[4];
-layout(set = 0, binding = 16) buffer TriLights{ TriLight triLights[]; } triLights;
+layout(std140, set = 0, binding = 16) buffer TriLights{ TriLight triLights[]; } triLights;
 
 // Declare hitpayloads
 
 #define HITPAYLOAD_OUT
 #include "../../foray/src/shaders/rt_common/payload.glsl"
 
+layout (location = 2) rayPayloadEXT bool isShadowed;
+
 vec3 pickPointOnTriangle(float r1, float r2, vec3 p1, vec3 p2, vec3 p3) {
+
+//	mat4 ProjMat      = Camera.ProjectionMatrix;
+//    mat4 ViewMat      = Camera.ViewMatrix;
+//
+//	p1 = (ProjMat * ViewMat * vec4(p1, 1)).xyz;
+//	p2 = (ProjMat * ViewMat * vec4(p2, 1)).xyz;
+//	p3 = (ProjMat * ViewMat * vec4(p3, 1)).xyz;
+
 	float sqrt_r1 = sqrt(r1);
 	return (1.0 - sqrt_r1) * p1 + (sqrt_r1 * (1.0 - r2)) * p2 + (r2 * sqrt_r1) * p3;
 }
 
+bool testVisibility(vec3 p1, vec3 p2) {
+	float tMin = 0.001f;
+	vec3 dir = p2 - p1;
+
+	isShadowed = true;
+
+	float curTMax = length(dir);
+	dir /= curTMax;
+
+	traceRayEXT(
+		MainTlas,            // acceleration structure
+		gl_RayFlagsTerminateOnFirstHitEXT | gl_RayFlagsOpaqueEXT | gl_RayFlagsSkipClosestHitShaderEXT,       // rayFlags
+		0xFF,           // cullMask
+		1,              // sbtRecordOffset
+		0,              // sbtRecordStride
+		1,              // missIndex
+		p1,             // ray origin
+		tMin,           // ray min range
+		dir,            // ray direction
+		curTMax - 2.0f * tMin,           // ray max range
+		2               // payload (location = 0)
+	);
+
+	return isShadowed;
+}
+
 void main() 
 {
+
+	//vec4 n = triLights.triLights[5].normal;
+	//debugPrintfEXT("triLight shader %f,%f,%f,%f \n", n.x, n.y, n.z, n.w);
+
 	uvec2 pixelCoord = gl_LaunchIDEXT.xy;
 
 	const vec2 pixelCenter = vec2(pixelCoord) + vec2(0.5);
@@ -131,30 +174,40 @@ void main()
 
 	//debugPrintfEXT("RESTIR CONFIG initla sample count = %d", RestirConfig.InitialLightSampleCount);
 	// RestirConfig
+	vec3 lightSamplePos2;
+	uint selected;
 	for (int i = 0; i < RestirConfig.InitialLightSampleCount; ++i) {
 
 		float lightSampleProb;
 		// chose a triangle with importance sampling by light power
 		//aliasTableSample(randFloat(rand), randFloat(rand), selected_idx, lightSampleProb);
-		lightSampleProb = 1.0f/32.0f; // probabiliy that light was sampled
+		lightSampleProb = 1.0f/32.0f; // probabiliy that light was sampled?
 
 		uint randomNr = lcgUint(randomSeed);
 		//debugPrintfEXT(" randomnr = %d \n", randomNr);
 		uint selected_idx = randomNr % RestirConfig.NumTriLights;
-		debugPrintfEXT("light index % d \n", selected_idx);
+		//debugPrintfEXT("light index % d \n", selected_idx);
 		vec4 lightNormal;
 
 		// pick a random point on the triangle light
+		// debug: triangle index 11 always yields 0.
+
 		TriLight light = triLights.triLights[selected_idx];
 		vec3 lightSamplePos = pickPointOnTriangle(lcgFloat(randomSeed), lcgFloat(randomSeed), light.p1.xyz, light.p2.xyz, light.p3.xyz);
-		
+		lightSamplePos2 = lightSamplePos;
+		selected = selected_idx;
 		// TODO: calculate luminance from material id
 		// lightSampleLum = light.emission_luminance.w;
 		float lightSampleLum = 1.0;
 
 		vec3 wi = normalize(worldPos - lightSamplePos);
 		vec3 normal = normalize(vec3(light.normal.xyz));
-		lightSampleProb /= abs(dot(wi, normal)) * light.normal.w;
+
+		float normalToLight = clamp(dot(wi, normal), 0, 1);
+		float triangleAreaSize = light.normal.w; // the bigger the triangle, the smaller the probability
+		lightSampleProb /= normalToLight * triangleAreaSize; // the worse the normalToLight angle, the smaller the probability
+		
+		//debugPrintfEXT("normalToLightFactor %f, triangleAreaSize %f, lightSampleProb %f \n", normalToLight, triangleAreaSize,lightSampleProb);
 		lightNormal = vec4(normal, 1.0f);
 
 
@@ -170,7 +223,7 @@ void main()
 	}
 
 	// print Reservoir
-	debugPrintfEXT("light index % d \n", res.samples[0].lightIndex);
+	//debugPrintfEXT("light index %d , X:%f Y:%f Z:%f \n", selected, lightSamplePos2.x,lightSamplePos2.y,lightSamplePos2.z);
 	//struct LightSample {
 //		vec4 position_emissionLum;
 //		vec4 normal;
@@ -180,24 +233,25 @@ void main()
 //		float w;
 //	};
 
-//
 //	uint reservoirIndex = pixelCoord.y * uniforms.screenSize.x + pixelCoord.x;
-//	
-//	vec3 worldPos = texelFetch(GBufferTextures[WORLDPOS], ivec2(pixelCoord), 0).xyz;
-//
-//	// Visibility Reuse (toggle ?)
-//	if(1)
-//	{
-//		for (int i = 0; i < RESERVOIR_SIZE; i++) {
-//			bool shadowed = testVisibility(worldPos, res.samples[i].position_emissionLum.xyz);
-//
-//			if (shadowed) {
-//				res.samples[i].w = 0.0f;
-//				res.samples[i].sumWeights = 0.0f;
-//			}
-//		}
-//	}
-//
+
+	// Visibility Reuse (toggle ?)
+	bool shadowed = true;
+	if(true)
+	{
+		for (int i = 0; i < RESERVOIR_SIZE; i++) {
+			shadowed = testVisibility(worldPos, res.samples[i].position_emissionLum.xyz);
+			//shadowed = testVisibility(worldPos, lightSamplePos2);
+			//debugPrintfEXT(" shadowed = %d \n", shadowed);
+			if (shadowed) {
+				res.samples[i].w = 0.0f;
+				res.samples[i].sumWeights = 0.0f;
+			}
+		}
+	}
+
+	imageStore(ImageOutput, ivec2(pixelCoord), vec4(!shadowed));
+
 //	// Temporal reuse
 //	if (1) 
 //	{
