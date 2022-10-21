@@ -42,19 +42,18 @@ class RestirProject : public foray::base::DefaultAppBase
     ~RestirProject(){};
 
   protected:
-    virtual void BeforeInstanceCreate(vkb::InstanceBuilder& instanceBuilder) override;
-    virtual void BeforeDeviceBuilding(vkb::DeviceBuilder& deviceBuilder) override;
-    virtual void BeforePhysicalDeviceSelection(vkb::PhysicalDeviceSelector& pds) override;
+    virtual void ApiBeforeInstanceCreate(vkb::InstanceBuilder& instanceBuilder) override;
+    virtual void ApiBeforeDeviceBuilding(vkb::DeviceBuilder& deviceBuilder) override;
+    virtual void ApiBeforeDeviceSelection(vkb::PhysicalDeviceSelector& pds) override;
 
-    virtual void Init() override;
-    virtual void OnEvent(const foray::Event* event) override;
-    virtual void Update(float delta) override;
+    virtual void ApiInit() override;
+    virtual void ApiOnEvent(const foray::Event* event) override;
 
-    virtual void RecordCommandBuffer(foray::base::FrameRenderInfo& renderInfo) override;
-    virtual void QueryResultsAvailable(uint64_t frameIndex) override;
-    virtual void OnResized(VkExtent2D size) override;
-    virtual void Destroy() override;
-    virtual void OnShadersRecompiled() override;
+    virtual void ApiRender(foray::base::FrameRenderInfo& renderInfo) override;
+    virtual void ApiQueryResultsAvailable(uint64_t frameIndex) override;
+    virtual void ApiOnResized(VkExtent2D size) override;
+    virtual void ApiDestroy() override;
+    virtual void ApiOnShadersRecompiled() override;
 
 
     void PrepareImguiWindow();

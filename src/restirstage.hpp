@@ -37,12 +37,12 @@ namespace foray {
         };
 
       public:
-        virtual void Init(const foray::core::VkContext* context,
-                          foray::scene::Scene*          scene,
-                          foray::core::ManagedImage*    envmap,
-                          foray::core::ManagedImage*    noiseSource,
-                          foray::stages::GBufferStage*  gbufferStage,
-                          RestirProject*                restirApp);
+        virtual void Init(foray::core::Context*  context,
+                          foray::scene::Scene*         scene,
+                          foray::core::ManagedImage*   envmap,
+                          foray::core::ManagedImage*   noiseSource,
+                          foray::stages::GBufferStage* gbufferStage,
+                          RestirProject*               restirApp);
         virtual void CreateRaytraycingPipeline() override;
         virtual void OnShadersRecompiled() override;
         virtual void OnResized(const VkExtent2D& extent) override;
@@ -65,14 +65,14 @@ namespace foray {
             std::string               Path = "";
             foray::core::ShaderModule Module;
 
-            void Create(const foray::core::VkContext* context);
+            void Create(foray::core::Context* context);
             void Destroy();
         };
 
       protected:
         RestirProject* mRestirApp{};
-        virtual void UpdateDescriptors() override;
-        virtual void PrepareAttachments() override;
+        virtual void   UpdateDescriptors() override;
+        virtual void   PrepareAttachments() override;
 
         void CopyGBufferToPrevFrameBuffers(VkCommandBuffer commandBuffer, base::FrameRenderInfo& renderInfo);
 

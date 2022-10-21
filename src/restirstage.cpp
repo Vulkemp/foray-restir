@@ -3,7 +3,7 @@
 #include "restir_app.hpp"
 
 namespace foray {
-    void RestirStage::Init(const foray::core::VkContext* context,
+    void RestirStage::Init(foray::core::Context* context,
                            foray::scene::Scene*          scene,
                            foray::core::ManagedImage*    envmap,
                            foray::core::ManagedImage*    noiseSource,
@@ -32,7 +32,7 @@ namespace foray {
                                           .minLod                  = 0,
                                           .maxLod                  = 0,
                                           .unnormalizedCoordinates = VK_FALSE};
-            AssertVkResult(vkCreateSampler(context->Device, &samplerCi, nullptr, &mNoiseSource.Sampler));
+            AssertVkResult(vkCreateSampler(context->Device(), &samplerCi, nullptr, &mNoiseSource.Sampler));
         }
         CreateGBufferSampler();
 
@@ -43,7 +43,7 @@ namespace foray {
         RestirConfiguration& restirConfig    = mRestirConfigurationUbo.GetData();
         restirConfig.ReservoirSize           = RESERVOIR_SIZE;
         restirConfig.InitialLightSampleCount = 32;  // number of samples to initally sample?
-        restirConfig.ScreenSize              = glm::uvec2(mContext->Swapchain.extent.width, mContext->Swapchain.extent.height);
+        restirConfig.ScreenSize              = glm::uvec2(mContext->GetSwapchainSize().width, mContext->GetSwapchainSize().height);
         restirConfig.NumTriLights            = 12; // TODO: get from collect emissive triangles
 
         mRestirConfigurationBufferInfos.resize(1);
@@ -91,7 +91,7 @@ namespace foray {
     {
         // update ubo
         RestirConfiguration restirConfig = mRestirConfigurationUbo.GetData();
-        restirConfig.ScreenSize          = glm::uvec2(mContext->Swapchain.extent.width, mContext->Swapchain.extent.height);
+        restirConfig.ScreenSize          = glm::uvec2(mContext->GetSwapchainSize().width, mContext->GetSwapchainSize().height);
 
         RaytracingStage::OnResized(extent);
         UpdateDescriptors();
@@ -124,7 +124,7 @@ namespace foray {
     void RestirStage::DestroyFixedComponents()
     {
         mRestirConfigurationUbo.Destroy();
-        vkDestroySampler(mContext->Device, mGBufferSampler, nullptr);
+        vkDestroySampler(mContext->Device(), mGBufferSampler, nullptr);
         RaytracingStage::DestroyFixedComponents();
     }
 
@@ -189,7 +189,7 @@ namespace foray {
             VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
         static const VkImageUsageFlags depthUsageFlags = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
 
-        VkExtent3D               extent                = {mContext->Swapchain.extent.width, mContext->Swapchain.extent.height, 1};
+        VkExtent3D               extent                = {mContext->GetSwapchainSize().width, mContext->GetSwapchainSize().height, 1};
         VmaMemoryUsage           memoryUsage           = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
         VmaAllocationCreateFlags allocationCreateFlags = 0;
         VkImageLayout            intialLayout          = VK_IMAGE_LAYOUT_UNDEFINED;
@@ -217,9 +217,9 @@ namespace foray {
 
         RestirConfiguration& restirConfig = mRestirConfigurationUbo.GetData();
 
-        Extent2D     windowSize    = mContext->ContextSwapchain.Window.Size();
+        VkExtent2D     windowSize    = mContext->GetSwapchainSize();
         VkDeviceSize reservoirSize = sizeof(Reservoir);
-        VkDeviceSize bufferSize    = windowSize.Width * windowSize.Height * reservoirSize * restirConfig.ReservoirSize;
+        VkDeviceSize bufferSize    = windowSize.width * windowSize.height * reservoirSize * restirConfig.ReservoirSize;
         for(size_t i = 0; i < mRestirStorageBuffers.size(); i++)
         {
             if(mRestirStorageBuffers[i].Exists())
@@ -234,7 +234,7 @@ namespace foray {
         }
     }
 
-    void RestirStage::RtStageShader::Create(const foray::core::VkContext* context)
+    void RestirStage::RtStageShader::Create(foray::core::Context* context)
     {
         Module.LoadFromSource(context, Path);
     }
@@ -287,7 +287,7 @@ namespace foray {
             // copy image
             {
                 VkImageCopy region{};
-                region.extent                        = {mContext->Swapchain.extent.width, mContext->Swapchain.extent.height, 1};
+                region.extent                        = {mContext->GetSwapchainSize().width, mContext->GetSwapchainSize().height, 1};
                 region.dstOffset                     = {0, 0, 0};
                 region.srcOffset                     = {0, 0, 0};
                 region.srcSubresource.aspectMask     = copyInfo.AspectFlags;
@@ -329,7 +329,7 @@ namespace foray {
                                           .minLod                  = 0,
                                           .maxLod                  = 0,
                                           .unnormalizedCoordinates = VK_FALSE};
-            AssertVkResult(vkCreateSampler(mContext->Device, &samplerCi, nullptr, &mGBufferSampler));
+            AssertVkResult(vkCreateSampler(mContext->Device(), &samplerCi, nullptr, &mGBufferSampler));
         }
     }
 

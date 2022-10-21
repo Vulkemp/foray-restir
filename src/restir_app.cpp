@@ -16,7 +16,7 @@
 
 #define USE_PRINTF
 
-void RestirProject::BeforeInstanceCreate(vkb::InstanceBuilder& instanceBuilder)
+void RestirProject::ApiBeforeInstanceCreate(vkb::InstanceBuilder& instanceBuilder)
 {
 #ifdef USE_PRINTF
     instanceBuilder.add_validation_feature_enable(VK_VALIDATION_FEATURE_ENABLE_DEBUG_PRINTF_EXT);
@@ -25,9 +25,9 @@ void RestirProject::BeforeInstanceCreate(vkb::InstanceBuilder& instanceBuilder)
 #endif
 }
 
-void RestirProject::BeforeDeviceBuilding(vkb::DeviceBuilder& deviceBuilder) {}
+void RestirProject::ApiBeforeDeviceBuilding(vkb::DeviceBuilder& deviceBuilder) {}
 
-void RestirProject::BeforePhysicalDeviceSelection(vkb::PhysicalDeviceSelector& pds)
+void RestirProject::ApiBeforeDeviceSelection(vkb::PhysicalDeviceSelector& pds)
 {
 #ifdef USE_PRINTF
     pds.add_required_extension(VK_KHR_SHADER_NON_SEMANTIC_INFO_EXTENSION_NAME);
@@ -52,7 +52,7 @@ VkBool32 myDebugCallback(VkDebugReportFlagsEXT      flags,
     return false;
 }
 
-void RestirProject::Init()
+void RestirProject::ApiInit()
 {
 #ifdef USE_PRINTF
     VkDebugReportCallbackEXT debugCallbackHandle;
@@ -65,13 +65,13 @@ void RestirProject::Init()
     ci.pUserData                          = nullptr;
 
     PFN_vkCreateDebugReportCallbackEXT pfn_vkCreateDebugReportCallbackEXT =
-        reinterpret_cast<PFN_vkCreateDebugReportCallbackEXT>(vkGetDeviceProcAddr(mContext.Device, "vkCreateDebugReportCallbackEXT"));
+        reinterpret_cast<PFN_vkCreateDebugReportCallbackEXT>(vkGetDeviceProcAddr(mContext.Device(), "vkCreateDebugReportCallbackEXT"));
 
     PFN_vkCreateDebugReportCallbackEXT CreateDebugReportCallback = VK_NULL_HANDLE;
-    CreateDebugReportCallback                                    = (PFN_vkCreateDebugReportCallbackEXT)vkGetInstanceProcAddr(mContext.Instance, "vkCreateDebugReportCallbackEXT");
+    CreateDebugReportCallback                                    = (PFN_vkCreateDebugReportCallbackEXT)vkGetInstanceProcAddr(mContext.Instance(), "vkCreateDebugReportCallbackEXT");
 
     // Create the callback handle
-    CreateDebugReportCallback(mContext.Instance, &ci, nullptr, &debugCallbackHandle);
+    CreateDebugReportCallback(mContext.Instance(), &ci, nullptr, &debugCallbackHandle);
 #endif
 
     foray::logger()->set_level(spdlog::level::debug);
@@ -83,19 +83,8 @@ void RestirProject::Init()
     ConfigureStages();
 }
 
-void RestirProject::Update(float delta)
+void RestirProject::ApiOnEvent(const foray::Event* event)
 {
-    DefaultAppBase::Update(delta);
-    if(mOutputChanged)
-    {
-        ApplyOutput();
-        mOutputChanged = false;
-    }
-}
-
-void RestirProject::OnEvent(const foray::Event* event)
-{
-    DefaultAppBase::OnEvent(event);
     auto buttonInput   = dynamic_cast<const foray::EventInputBinary*>(event);
     auto axisInput     = dynamic_cast<const foray::EventInputAnalogue*>(event);
     auto windowResized = dynamic_cast<const foray::EventWindowResized*>(event);
@@ -248,9 +237,8 @@ std::shared_ptr<foray::core::DescriptorSetHelper::DescriptorInfo> RestirProject:
     return descriptorInfo;
 }
 
-void RestirProject::Destroy()
+void RestirProject::ApiDestroy()
 {
-    vkDeviceWaitIdle(mContext.Device);
     mNoiseSource.Destroy();
     mScene->Destroy();
     mScene = nullptr;
@@ -259,11 +247,9 @@ void RestirProject::Destroy()
     mRestirStage.Destroy();
     mSphericalEnvMap.Destroy();
     mTriangleLightsBuffer.Destroy();
-
-    DefaultAppBase::Destroy();
 }
 
-void RestirProject::OnShadersRecompiled()
+void RestirProject::ApiOnShadersRecompiled()
 {
     mGbufferStage.OnShadersRecompiled();
     mRestirStage.OnShadersRecompiled();
@@ -273,7 +259,12 @@ void RestirProject::PrepareImguiWindow()
 {
     mImguiStage.AddWindowDraw([this]() {
         ImGui::Begin("window");
-        ImGui::Text("FPS: %f", mFps);
+
+        foray::base::RenderLoop::FrameTimeAnalysis analysis = this->GetRenderLoop().AnalyseFrameTimes();
+        if(analysis.Count > 0)
+        {
+            ImGui::Text("FPS: avg: %f min: %f", 1.f / analysis.AvgFrameTime, 1.f / analysis.MaxFrameTime);
+        }
 
         const char* current = mCurrentOutput.data();
         if(ImGui::BeginCombo("Output", current))
@@ -326,8 +317,14 @@ void RestirProject::ConfigureStages()
     mImageToSwapchainStage.Init(&mContext, mOutputs[mCurrentOutput]);
 }
 
-void RestirProject::RecordCommandBuffer(foray::base::FrameRenderInfo& renderInfo)
+void RestirProject::ApiRender(foray::base::FrameRenderInfo& renderInfo)
 {
+    if(mOutputChanged)
+    {
+        ApplyOutput();
+        mOutputChanged = false;
+    }
+
     foray::core::DeviceCommandBuffer& commandBuffer = renderInfo.GetPrimaryCommandBuffer();
     commandBuffer.Begin();
 
@@ -355,10 +352,10 @@ void RestirProject::RecordCommandBuffer(foray::base::FrameRenderInfo& renderInfo
     mImageToSwapchainStage.RecordFrame(commandBuffer, renderInfo);
 
     renderInfo.GetInFlightFrame()->PrepareSwapchainImageForPresent(commandBuffer, renderInfo.GetImageLayoutCache());
-    commandBuffer.Submit(mContext.QueueGraphics);
+    commandBuffer.Submit();
 }
 
-void RestirProject::QueryResultsAvailable(uint64_t frameIndex)
+void RestirProject::ApiQueryResultsAvailable(uint64_t frameIndex)
 {
 #ifdef ENABLE_GBUFFER_BENCH
     mGbufferStage.GetBenchmark().LogQueryResults(frameIndex);
@@ -366,7 +363,7 @@ void RestirProject::QueryResultsAvailable(uint64_t frameIndex)
 #endif  // ENABLE_GBUFFER_BENCH
 }
 
-void RestirProject::OnResized(VkExtent2D size)
+void RestirProject::ApiOnResized(VkExtent2D size)
 {
     mScene->InvokeOnResized(size);
     mGbufferStage.OnResized(size);
@@ -377,7 +374,7 @@ void RestirProject::OnResized(VkExtent2D size)
 
     UpdateOutputs();
 
-    mImguiStage.OnResized(size, mOutputs[mCurrentOutput]);
+    mImguiStage.OnResized(size);
     mImageToSwapchainStage.OnResized(size);
 }
 
@@ -412,7 +409,7 @@ void RestirProject::UpdateOutputs()
 
 void RestirProject::ApplyOutput()
 {
-    vkDeviceWaitIdle(mContext.Device);
+    vkDeviceWaitIdle(mContext.Device());
     auto output = mOutputs[mCurrentOutput];
     mImguiStage.SetTargetImage(output);
     mImageToSwapchainStage.SetTargetImage(output);
