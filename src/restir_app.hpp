@@ -47,7 +47,7 @@ class RestirProject : public foray::base::DefaultAppBase
     virtual void ApiBeforeDeviceSelection(vkb::PhysicalDeviceSelector& pds) override;
 
     virtual void ApiInit() override;
-    virtual void ApiOnEvent(const foray::Event* event) override;
+    virtual void ApiOnEvent(const foray::osi::Event* event) override;
 
     virtual void ApiRender(foray::base::FrameRenderInfo& renderInfo) override;
     virtual void ApiQueryResultsAvailable(uint64_t frameIndex) override;

@@ -3,6 +3,7 @@
 #include <stages/foray_gbuffer.hpp>
 #include <stages/foray_raytracingstage.hpp>
 #include <util/foray_managedubo.hpp>
+#include <core/foray_descriptorset.hpp>
 
 class RestirProject;
 
@@ -70,6 +71,7 @@ namespace foray {
         };
 
       protected:
+
         RestirProject* mRestirApp{};
         virtual void   UpdateDescriptors() override;
         virtual void   PrepareAttachments() override;

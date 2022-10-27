@@ -156,8 +156,9 @@ void main()
 	reservoirs.reservoirs[0].numStreamSamples = prevFrameReservoirs.prevFrameReservoirs[0].numStreamSamples + 1;
 
 	// test gbuffer 
-	vec3 albedo = texelFetch(GBufferTextures[WORLDNORMAL], ivec2(pixelCoord), 0).xyz;
+	vec3 albedo = texelFetch(GBufferTextures[ALBEDO], ivec2(pixelCoord), 0).xyz;
 	vec3 worldPos = texelFetch(GBufferTextures[WORLDPOS], ivec2(pixelCoord), 0).xyz;
+	vec3 worldNormal = texelFetch(GBufferTextures[WORLDNORMAL], ivec2(pixelCoord), 0).xyz;
 	imageStore(ImageOutput, ivec2(pixelCoord.xy), vec4(albedo, 1));
 
 	// testing depth buffers
@@ -203,6 +204,7 @@ void main()
 		vec3 wi = normalize(worldPos - lightSamplePos);
 		vec3 normal = normalize(vec3(light.normal.xyz));
 
+		// lights that don't face surface are discarded?
 		float normalToLight = clamp(dot(wi, normal), 0, 1);
 		float triangleAreaSize = light.normal.w; // the bigger the triangle, the smaller the probability
 		lightSampleProb /= normalToLight * triangleAreaSize; // the worse the normalToLight angle, the smaller the probability
@@ -251,6 +253,115 @@ void main()
 	}
 
 	imageStore(ImageOutput, ivec2(pixelCoord), vec4(!shadowed));
+
+	// scale motion range 0..1 to ScreenSize space
+	vec2 screenSize = vec2(RestirConfig.ScreenSize);
+	vec2 motion = texelFetch(GBufferTextures[MOTION], ivec2(pixelCoord), 0).xy * screenSize;
+	//debugPrintfEXT("screenSize = %f,%f \n", screenSize.x, screenSize.y);
+	vec2 oldCoords = pixelCoord + motion;
+
+	vec3 oldWorldPos = texelFetch(PreviousFrameImages[1], ivec2(oldCoords), 0).xyz;
+
+	//imageStore(ImageOutput, ivec2(pixelCoord), vec4(worldPos-oldWorldPos,1)); // trippy colors
+
+	// just doesn't work.
+//	vec4 prevFramePos = RestirConfig.PrevFrameProjectionViewMatrix * vec4(worldPos, 1.0f);
+//	prevFramePos.xyz /= prevFramePos.w;
+//	prevFramePos.xy = (prevFramePos.xy + 1.0f) * 0.5f * vec2(RestirConfig.ScreenSize);
+//	oldWorldPos = prevFramePos.xyz;
+//
+	bool positionDiffValid = false;
+	bool normalDiffValid = false;
+	bool albedoDiffValid = false;
+	if(
+		all(greaterThanEqual(oldCoords.xy, vec2(0.0f))) &&
+		all(lessThanEqual(oldCoords.xy, screenSize))
+	)
+	{
+		vec3 positionDiff = worldPos-oldWorldPos;
+		if (dot(positionDiff, positionDiff) < 0.1f) {
+			positionDiffValid = true;
+		}
+
+		vec3 oldNormal = texelFetch(PreviousFrameImages[2], ivec2(oldCoords), 0).xyz;
+		vec3 normalDiff = worldNormal - oldNormal;
+		if (dot(normalDiff, normalDiff) < 0.1f) {
+			normalDiffValid = true;
+		}
+		vec3 oldAlbedo = texelFetch(PreviousFrameImages[3], ivec2(oldCoords), 0).xyz;
+		vec3 albedoDiff = albedo - oldAlbedo;
+		if (dot(albedoDiff, albedoDiff) < 0.1f) {
+			albedoDiffValid = true;
+		}
+	}
+
+	bool usePositionDiff = true;
+	bool useNormalDiff = true;
+	bool useAlbedoDiff = true;
+
+	if(positionDiffValid && normalDiffValid && albedoDiffValid)
+	{
+		uvec2 prevFragCoords = uvec2(oldCoords);
+		Reservoir prevRes = prevFrameReservoirs.prevFrameReservoirs[prevFragCoords.y * RestirConfig.ScreenSize.x + prevFragCoords.x];
+
+		// clamp the number of samples
+		prevRes.numStreamSamples = min(
+			prevRes.numStreamSamples, 200
+		);
+
+		//vec2 metallicRoughness = texelFetch(uniMaterialProperties, ivec2(pixelCoord), 0).xy;
+
+		float pHat[RESERVOIR_SIZE];
+		for (int i = 0; i < RESERVOIR_SIZE; ++i) {
+//			pHat[i] = evaluatePHat(
+//				worldPos, prevRes.samples[i].position_emissionLum.xyz, uniforms.cameraPos.xyz,
+//				normal, prevRes.samples[i].normal.xyz, prevRes.samples[i].normal.w > 0.5f,
+//				albedoLum, prevRes.samples[i].position_emissionLum.w, metallicRoughness.x, metallicRoughness.y
+//			);
+			pHat[i] = 1.0f;
+		}
+
+		combineReservoirs(res, prevRes, pHat, randomSeed);
+	}
+
+	uint reservoirIndex = pixelCoord.y * RestirConfig.ScreenSize.x + pixelCoord.x;
+	reservoirs.reservoirs[reservoirIndex] = res;
+	
+	// shade pixel by usin Reservoir
+//	struct LightSample {
+//	vec4 position_emissionLum;
+//	vec4 normal;
+//	uint lightIndex;
+//	float pHat;
+//	float sumWeights;
+//	float w;
+//};
+//
+//struct Reservoir {
+//	LightSample samples[RESERVOIR_SIZE];
+//	uint numStreamSamples;
+//};
+
+	vec4 finalColor = vec4(vec3(res.samples[0].w) * albedo,1.0f);
+	imageStore(ImageOutput, ivec2(pixelCoord), vec4(finalColor));
+	imageStore(ImageOutput, ivec2(pixelCoord), vec4(!shadowed));
+//	imageStore(ImageOutput, ivec2(pixelCoord), vec4(!shadowed));
+//	if(colorGreen&&colorRed&&colorBlue)
+//	{
+//		imageStore(ImageOutput, ivec2(pixelCoord), vec4(1,0,1,1));
+//	}
+//	else if(colorGreen)
+//	{
+//		imageStore(ImageOutput, ivec2(pixelCoord), vec4(0,1,0,1));
+//	}
+//	else if(colorRed)
+//	{
+//		imageStore(ImageOutput, ivec2(pixelCoord), vec4(1,0,0,1));
+//	}
+//	else if(colorBlue)
+//	{
+//		imageStore(ImageOutput, ivec2(pixelCoord), vec4(0,0,1,1));
+//	}
 
 //	// Temporal reuse
 //	if (1) 
@@ -303,5 +414,4 @@ void main()
 //	}
 //
 //	reservoirs[reservoirIndex] = res;
-
 }

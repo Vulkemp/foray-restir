@@ -83,15 +83,8 @@ void RestirProject::ApiInit()
     ConfigureStages();
 }
 
-void RestirProject::ApiOnEvent(const foray::Event* event)
+void RestirProject::ApiOnEvent(const foray::osi::Event* event)
 {
-    auto buttonInput   = dynamic_cast<const foray::EventInputBinary*>(event);
-    auto axisInput     = dynamic_cast<const foray::EventInputAnalogue*>(event);
-    auto windowResized = dynamic_cast<const foray::EventWindowResized*>(event);
-    if(windowResized)
-    {
-        spdlog::info("Window resized w {} h {}", windowResized->Current.Width, windowResized->Current.Height);
-    }
     mScene->InvokeOnEvent(event);
 
     // process events for imgui
@@ -102,7 +95,7 @@ void RestirProject::loadScene()
 {
     std::vector<std::string> scenePaths({
         "../data/scenes/Sponza/glTF/Sponza.gltf",
-        "../data/scenes/cube/cube.gltf",
+        "../data/scenes/cube/cube2.gltf",
     });
 
     mScene = std::make_unique<foray::scene::Scene>(&mContext);
@@ -111,13 +104,9 @@ void RestirProject::loadScene()
     {
         converter.LoadGltfModel(foray::osi::MakeRelativePath(path));
     }
-    mScene->MakeComponent<foray::scene::TlasManager>(&mContext)->CreateOrUpdate();
 
-    auto cameraNode = mScene->MakeNode();
-
-    cameraNode->MakeComponent<foray::scene::Camera>()->InitDefault();
-    cameraNode->MakeComponent<foray::scene::FreeCameraController>();
-    mScene->GetComponent<foray::scene::CameraManager>()->RefreshCameraList();
+    mScene->UpdateTlasManager();
+    mScene->UseDefaultCamera();
 
     for(int32_t i = 0; i < scenePaths.size(); i++)
     {
@@ -412,5 +401,5 @@ void RestirProject::ApplyOutput()
     vkDeviceWaitIdle(mContext.Device());
     auto output = mOutputs[mCurrentOutput];
     mImguiStage.SetTargetImage(output);
-    mImageToSwapchainStage.SetTargetImage(output);
+    mImageToSwapchainStage.SetSrcImage(output);
 }
