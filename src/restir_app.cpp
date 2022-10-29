@@ -6,6 +6,8 @@
 #include <scene/components/foray_camera.hpp>
 #include <scene/components/foray_freecameracontroller.hpp>
 #include <scene/components/foray_meshinstance.hpp>
+#include <scene/components/foray_transform.hpp>
+#include <scene/foray_node.hpp>
 #include <scene/foray_mesh.hpp>
 #include <scene/globalcomponents/foray_cameramanager.hpp>
 #include <scene/globalcomponents/foray_tlasmanager.hpp>
@@ -179,6 +181,10 @@ void RestirProject::CollectEmissiveTriangles()
         indices       = &(primitives[0].Indices);
         materialIndex = primitives[0].MaterialIndex;
 
+        // get geometry world transform
+        foray::scene::Transform* transform = node->GetTransform();
+        glm::mat4                transformMat = transform->GetGlobalMatrix();
+
         // create triangles from vertices & indices
         mTriangleLights.resize(indices->size() / 3);
         for(size_t i = 0; i < indices->size(); i += 3)
@@ -190,9 +196,9 @@ void RestirProject::CollectEmissiveTriangles()
 
             // TODO: world matrix of primitive has to be considered for triangle position.
             shader::TriLight& triLight = mTriangleLights[i / 3];
-            triLight.p1                = glm::vec4(p1_vec3, 1.0);
-            triLight.p2                = glm::vec4(p2_vec3, 1.0);
-            triLight.p3                = glm::vec4(p3_vec3, 1.0);
+            triLight.p1                = transformMat * glm::vec4(p1_vec3, 1.0);
+            triLight.p2                = transformMat * glm::vec4(p2_vec3, 1.0);
+            triLight.p3                = transformMat * glm::vec4(p3_vec3, 1.0);
 
             // material index for shader lookup
             triLight.materialIndex = materialIndex;
@@ -215,15 +221,6 @@ void RestirProject::UploadLightsToGpu()
     VmaAllocationCreateFlags allocFlags     = 0;
     mTriangleLightsBuffer.Create(&mContext, bufferUsage, bufferSize, bufferMemUsage, allocFlags, "TriangleLightsBuffer");
     mTriangleLightsBuffer.WriteDataDeviceLocal(mTriangleLights.data(), bufferSize);
-}
-
-std::shared_ptr<foray::core::DescriptorSetHelper::DescriptorInfo> RestirProject::MakeDescriptorInfos_TriangleLights(VkShaderStageFlags shaderStage) {
-    mTriangleLightsBufferInfos.resize(1);
-    mTriangleLightsBuffer.FillVkDescriptorBufferInfo(&mTriangleLightsBufferInfos[0]);
-    auto descriptorInfo = std::make_shared<foray::core::DescriptorSetHelper::DescriptorInfo>();
-    descriptorInfo->Init(VkDescriptorType::VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, shaderStage);
-    descriptorInfo->AddDescriptorSet(&mTriangleLightsBufferInfos);
-    return descriptorInfo;
 }
 
 void RestirProject::ApiDestroy()
@@ -291,12 +288,7 @@ void RestirProject::PrepareImguiWindow()
 void RestirProject::ConfigureStages()
 {
     mGbufferStage.Init(&mContext, mScene.get());
-    auto albedoImage = mGbufferStage.GetColorAttachmentByName(foray::stages::GBufferStage::Albedo);
-    auto normalImage = mGbufferStage.GetColorAttachmentByName(foray::stages::GBufferStage::WorldspaceNormal);
-
     mRestirStage.Init(&mContext, mScene.get(), &mSphericalEnvMap, &mNoiseSource.GetImage(), &mGbufferStage, this);
-    auto rtImage = mRestirStage.GetColorAttachmentByName(foray::stages::RaytracingStage::RaytracingRenderTargetName);
-
     UpdateOutputs();
 
     mImguiStage.Init(&mContext, mOutputs[mCurrentOutput]);
@@ -328,7 +320,7 @@ void RestirProject::ApiRender(foray::base::FrameRenderInfo& renderInfo)
         barrier.NewLayout                   = VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL;
         barrier.SubresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
 
-        renderInfo.GetImageLayoutCache().CmdBarrier(commandBuffer, mGbufferStage.GetDepthBuffer(), barrier, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
+        renderInfo.GetImageLayoutCache().CmdBarrier(commandBuffer, mGbufferStage.GetImageOutput(foray::stages::GBufferStage::DepthOutputName), barrier, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
                                                     VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR);
     }
 
@@ -356,31 +348,24 @@ void RestirProject::ApiOnResized(VkExtent2D size)
 {
     mScene->InvokeOnResized(size);
     mGbufferStage.OnResized(size);
-    auto albedoImage = mGbufferStage.GetColorAttachmentByName(foray::stages::GBufferStage::Albedo);
-    auto normalImage = mGbufferStage.GetColorAttachmentByName(foray::stages::GBufferStage::WorldspaceNormal);
     mRestirStage.OnResized(size);
-    auto rtImage = mRestirStage.GetColorAttachmentByName(foray::stages::RaytracingStage::RaytracingRenderTargetName);
-
     UpdateOutputs();
-
     mImguiStage.OnResized(size);
     mImageToSwapchainStage.OnResized(size);
 }
 
 void lUpdateOutput(std::unordered_map<std::string_view, foray::core::ManagedImage*>& map, foray::stages::RenderStage& stage, const std::string_view name)
 {
-    map[name] = stage.GetColorAttachmentByName(name);
+    map[name] = stage.GetImageOutput(name);
 }
 
 void RestirProject::UpdateOutputs()
 {
     mOutputs.clear();
-    lUpdateOutput(mOutputs, mGbufferStage, foray::stages::GBufferStage::Albedo);
-    lUpdateOutput(mOutputs, mGbufferStage, foray::stages::GBufferStage::WorldspacePosition);
-    lUpdateOutput(mOutputs, mGbufferStage, foray::stages::GBufferStage::WorldspaceNormal);
-    lUpdateOutput(mOutputs, mGbufferStage, foray::stages::GBufferStage::MotionVector);
-    lUpdateOutput(mOutputs, mGbufferStage, foray::stages::GBufferStage::MaterialIndex);
-    lUpdateOutput(mOutputs, mGbufferStage, foray::stages::GBufferStage::MeshInstanceIndex);
+    lUpdateOutput(mOutputs, mGbufferStage, foray::stages::GBufferStage::AlbedoOutputName);
+    lUpdateOutput(mOutputs, mGbufferStage, foray::stages::GBufferStage::PositionOutputName);
+    lUpdateOutput(mOutputs, mGbufferStage, foray::stages::GBufferStage::NormalOutputName);
+    lUpdateOutput(mOutputs, mGbufferStage, foray::stages::GBufferStage::MotionOutputName);
     lUpdateOutput(mOutputs, mRestirStage, foray::stages::RaytracingStage::RaytracingRenderTargetName);
 
     if(mCurrentOutput.size() == 0 || !mOutputs.contains(mCurrentOutput))

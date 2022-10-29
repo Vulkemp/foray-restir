@@ -1,9 +1,9 @@
 #pragma once
 #include <array>
+#include <core/foray_descriptorset.hpp>
 #include <stages/foray_gbuffer.hpp>
 #include <stages/foray_raytracingstage.hpp>
 #include <util/foray_managedubo.hpp>
-#include <core/foray_descriptorset.hpp>
 
 class RestirProject;
 
@@ -38,7 +38,7 @@ namespace foray {
         };
 
       public:
-        virtual void Init(foray::core::Context*  context,
+        virtual void Init(foray::core::Context*        context,
                           foray::scene::Scene*         scene,
                           foray::core::ManagedImage*   envmap,
                           foray::core::ManagedImage*   noiseSource,
@@ -48,9 +48,12 @@ namespace foray {
         virtual void OnShadersRecompiled() override;
         virtual void OnResized(const VkExtent2D& extent) override;
 
+        virtual void CreatePipelineLayout() override;
+
         virtual void RecordFrame(VkCommandBuffer commandBuffer, base::FrameRenderInfo& renderInfo) override;
 
         virtual void SetupDescriptors() override;
+        virtual void CreateDescriptorSets() override;
 
         virtual void CreateFixedSizeComponents() override;
         virtual void DestroyFixedComponents() override;
@@ -71,26 +74,22 @@ namespace foray {
         };
 
       protected:
-
         RestirProject* mRestirApp{};
+        void           SetResolutionDependentDescriptors();
         virtual void   UpdateDescriptors() override;
-        virtual void   PrepareAttachments() override;
+        void           PrepareAttachments();
 
         void CopyGBufferToPrevFrameBuffers(VkCommandBuffer commandBuffer, base::FrameRenderInfo& renderInfo);
 
-        void                                                              CreateGBufferSampler();
-        VkSampler                                                         mGBufferSampler{};
-        std::vector<VkDescriptorImageInfo>                                mGBufferImageInfos;
-        foray::stages::GBufferStage*                                      mGBufferStage{};
-        std::shared_ptr<foray::core::DescriptorSetHelper::DescriptorInfo> MakeDescriptorInfos_GBufferImages(VkShaderStageFlags shaderStage);
+        void                               CreateGBufferSampler();
+        VkSampler                          mGBufferSampler{};
+        std::vector<VkDescriptorImageInfo> mGBufferImageInfos;
+        foray::stages::GBufferStage*       mGBufferStage{};
 
-        foray::core::ManagedImage                                         mPreviousFrameDepthBuffer_Read;
-        foray::core::ManagedImage                                         mPreviousFrameDepthBuffer_Write;
-        std::array<foray::core::ManagedBuffer, 2>                         mPrevFrameDepthImages;
-        std::array<std::vector<VkDescriptorBufferInfo>, 2>                mImageInfos_PrevFrameDepthBufferRead;
-        std::array<std::vector<VkDescriptorBufferInfo>, 2>                mImageInfos_PrevFrameDepthBufferWrite;
-        std::shared_ptr<foray::core::DescriptorSetHelper::DescriptorInfo> MakeDescriptorInfos_PrevFrameDepthBufferRead(VkShaderStageFlags shaderStage);
-        std::shared_ptr<foray::core::DescriptorSetHelper::DescriptorInfo> MakeDescriptorInfos_PrevFrameDepthBufferWrite(VkShaderStageFlags shaderStage);
+        foray::core::ManagedImage                 mPreviousFrameDepthBuffer_Read;
+        foray::core::ManagedImage                 mPreviousFrameDepthBuffer_Write;
+        std::array<foray::core::ManagedBuffer, 2> mPrevFrameDepthImages;
+
 
         RtStageShader mRaygen{"shaders/raygen.rgen"};
         RtStageShader mDefault_AnyHit{"shaders/ray-default/anyhit.rahit"};
@@ -103,24 +102,18 @@ namespace foray {
         // previous frame infos
         enum class PreviousFrame
         {
-            Depth,
-            WorldPos,
+            Albedo,
             Normal,
-            Albedo
+            WorldPos,
+            Depth,
         };
-        const uint32_t                                                    mNumPreviousFrameBuffers{4};
-        std::array<foray::core::ManagedImage, 4>                          mPrevFrameBuffers;
-        std::vector<VkDescriptorImageInfo>                                mBufferInfos_PrevFrameBuffers;
-        std::shared_ptr<foray::core::DescriptorSetHelper::DescriptorInfo> MakeDescriptorInfos_PrevFrameBuffers(VkShaderStageFlags shaderStage);
+        const uint32_t                           mNumPreviousFrameBuffers{4};
+        std::array<foray::core::ManagedImage, 4> mPrevFrameBuffers;
+        std::vector<VkDescriptorImageInfo>       mBufferInfos_PrevFrameBuffers;
 
-        std::array<foray::core::ManagedBuffer, 2>                         mRestirStorageBuffers;
-        std::array<std::vector<VkDescriptorBufferInfo>, 2>                mBufferInfos_StorageBufferRead;
-        std::array<std::vector<VkDescriptorBufferInfo>, 2>                mBufferInfos_StorageBufferWrite;
-        std::shared_ptr<foray::core::DescriptorSetHelper::DescriptorInfo> MakeDescriptorInfos_StorageBufferReadSource(VkShaderStageFlags shaderStage);
-        std::shared_ptr<foray::core::DescriptorSetHelper::DescriptorInfo> MakeDescriptorInfos_StorageBufferWriteTarget(VkShaderStageFlags shaderStage);
+        std::array<foray::core::ManagedBuffer, 2> mReservoirBuffers;
+        std::array<foray::core::DescriptorSet, 2> mDescriptorSetsReservoirSwap;
 
-        foray::util::ManagedUbo<RestirConfiguration>                      mRestirConfigurationUbo;
-        std::vector<VkDescriptorBufferInfo>                               mRestirConfigurationBufferInfos;
-        std::shared_ptr<foray::core::DescriptorSetHelper::DescriptorInfo> MakeDescriptorInfos_RestirConfigurationUbo(VkShaderStageFlags shaderStage);
+        foray::util::ManagedUbo<RestirConfiguration> mRestirConfigurationUbo;
     };
 }  // namespace foray

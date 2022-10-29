@@ -44,6 +44,7 @@ namespace foray {
             AssertVkResult(vkCreateSampler(context->Device(), &samplerCi, nullptr, &mNoiseSource.Sampler));
         }
         CreateGBufferSampler();
+        PrepareAttachments();
 
         // init restir buffers
 
@@ -54,8 +55,6 @@ namespace foray {
         restirConfig.InitialLightSampleCount = 32;  // number of samples to initally sample?
         restirConfig.ScreenSize              = glm::uvec2(mContext->GetSwapchainSize().width, mContext->GetSwapchainSize().height);
         restirConfig.NumTriLights            = 12;  // TODO: get from collect emissive triangles
-
-        mRestirConfigurationBufferInfos.resize(1);
 
         mBufferInfos_PrevFrameBuffers.resize(4);
 
@@ -104,7 +103,23 @@ namespace foray {
 
         RaytracingStage::OnResized(extent);
         UpdateDescriptors();
-        mDescriptorSet.Update();
+    }
+
+     void RestirStage::CreatePipelineLayout()
+    {
+         std::vector<VkDescriptorSetLayout> descriptorSetLayouts = {mDescriptorSet.GetDescriptorSetLayout(), mDescriptorSetsReservoirSwap[0].GetDescriptorSetLayout()};
+        VkPipelineLayoutCreateInfo pipelineLayoutCreateInfo{};
+        pipelineLayoutCreateInfo.sType          = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+        pipelineLayoutCreateInfo.setLayoutCount = descriptorSetLayouts.size();
+        pipelineLayoutCreateInfo.pSetLayouts    = descriptorSetLayouts.data();
+        VkPushConstantRange pushC{
+            .stageFlags = VkShaderStageFlagBits::VK_SHADER_STAGE_RAYGEN_BIT_KHR | VkShaderStageFlagBits::VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR,
+            .offset     = 0,
+            .size       = sizeof(mPushConstant),
+        };
+        pipelineLayoutCreateInfo.pPushConstantRanges    = &pushC;
+        pipelineLayoutCreateInfo.pushConstantRangeCount = 1;
+        AssertVkResult(vkCreatePipelineLayout(mContext->Device(), &pipelineLayoutCreateInfo, nullptr, &mPipelineLayout));
     }
 
     void RestirStage::RecordFrame(VkCommandBuffer commandBuffer, base::FrameRenderInfo& renderInfo)
@@ -121,7 +136,12 @@ namespace foray {
         restirConfig.PrevFrameProjectionViewMatrix = mRestirApp->mScene->GetComponent<scene::CameraManager>()->GetUbo().GetData().PreviousProjectionViewMatrix;
         mRestirConfigurationUbo.UpdateTo(frameNumber);
         mRestirConfigurationUbo.CmdCopyToDevice(frameNumber, commandBuffer);
+
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, mPipelineLayout, 1, 1, &mDescriptorSetsReservoirSwap[frameNumber % 2].GetDescriptorSet(), 0,
+                                nullptr);
+
         RaytracingStage::RecordFrame(commandBuffer, renderInfo);
+       
 
         // copy gbuffer to prev frame
         CopyGBufferToPrevFrameBuffers(commandBuffer, renderInfo);
@@ -154,7 +174,7 @@ namespace foray {
         }
         for(size_t i = 0; i < 2; i++)
         {
-            mRestirStorageBuffers[i].Destroy();
+            mReservoirBuffers[i].Destroy();
         }
     }
 
@@ -165,10 +185,22 @@ namespace foray {
         RaytracingStage::SetupDescriptors();
 
         // bind variable descriptors
-        UpdateDescriptors();
+        SetResolutionDependentDescriptors();
 
         mDescriptorSet.SetDescriptorAt(11, &mRestirConfigurationUbo.GetUboBuffer().GetDeviceBuffer(), VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_RAYGEN_BIT_KHR);
         mDescriptorSet.SetDescriptorAt(16, mRestirApp->mTriangleLightsBuffer, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_RAYGEN_BIT_KHR);
+    }
+
+    void RestirStage::CreateDescriptorSets()
+    {
+        // create base descriptor sets
+        RaytracingStage::CreateDescriptorSets();
+
+        // create reservoir swap descriptor sets
+        for(size_t i = 0; i < 2; i++)
+        {
+            mDescriptorSetsReservoirSwap[i].Create(mContext, "DescriptorSet_ReservoirBufferSwap" + i);
+        }
     }
 
     void RestirStage::Destroy()
@@ -184,19 +216,23 @@ namespace foray {
         mDefault_Miss.Destroy();
     }
 
-    void RestirStage::UpdateDescriptors()
-    {
-        // update resources that change after resize of window for example
-        mDescriptorSet.SetDescriptorAt(12, mRestirStorageBuffers[0], VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_RAYGEN_BIT_KHR);
-        mDescriptorSet.SetDescriptorAt(13, mRestirStorageBuffers[1], VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_RAYGEN_BIT_KHR);
+    void RestirStage::SetResolutionDependentDescriptors() {
+        // swap set 0
+        mDescriptorSetsReservoirSwap[0].SetDescriptorAt(0, mReservoirBuffers[0], VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_RAYGEN_BIT_KHR);
+        mDescriptorSetsReservoirSwap[0].SetDescriptorAt(1, mReservoirBuffers[1], VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_RAYGEN_BIT_KHR);
+
+        // swap set 1
+        mDescriptorSetsReservoirSwap[1].SetDescriptorAt(0, mReservoirBuffers[1], VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_RAYGEN_BIT_KHR);
+        mDescriptorSetsReservoirSwap[1].SetDescriptorAt(1, mReservoirBuffers[0], VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_RAYGEN_BIT_KHR);
 
         // =======================================================================================
         // Binding GBuffer images
         {
-            std::vector<core::ManagedImage*>   gbufferImages = {mGBufferStage->GetColorAttachmentByName(mGBufferStage->Albedo),
-                                                                mGBufferStage->GetColorAttachmentByName(mGBufferStage->WorldspaceNormal),
-                                                                mGBufferStage->GetColorAttachmentByName(mGBufferStage->WorldspacePosition),
-                                                                mGBufferStage->GetColorAttachmentByName(mGBufferStage->MotionVector), mGBufferStage->GetDepthBuffer()};
+            std::vector<core::ManagedImage*>   gbufferImages = {mGBufferStage->GetImageOutput(mGBufferStage->AlbedoOutputName),
+                                                                mGBufferStage->GetImageOutput(mGBufferStage->NormalOutputName),
+                                                                mGBufferStage->GetImageOutput(mGBufferStage->PositionOutputName),
+                                                                mGBufferStage->GetImageOutput(mGBufferStage->MotionOutputName),
+                                                                mGBufferStage->GetImageOutput(mGBufferStage->DepthOutputName)};
             std::vector<VkDescriptorImageInfo> imageInfos(gbufferImages.size());
             for(size_t i = 0; i < gbufferImages.size(); i++)
             {
@@ -211,19 +247,24 @@ namespace foray {
 
         // =======================================================================================
         // Binding previous frame gbuffer data
-        std::vector<core::ManagedImage*> prevFrameBuffers = {};
+        std::vector<const core::ManagedImage*> prevFrameBuffers = {};
         for(uint32_t i = 0; i < mNumPreviousFrameBuffers; i++)
         {
             prevFrameBuffers.push_back(&mPrevFrameBuffers[i]);
         }
-        mDescriptorSet.SetDescriptorAt(15, prevFrameBuffers, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_RAYGEN_BIT_KHR, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, mGBufferSampler);
-        
+        mDescriptorSet.SetDescriptorAt(15, prevFrameBuffers, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, mGBufferSampler, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+                                       VK_SHADER_STAGE_RAYGEN_BIT_KHR);
+    }
+
+    void RestirStage::UpdateDescriptors()
+    {
+        SetResolutionDependentDescriptors();
         RaytracingStage::UpdateDescriptors();
     }
 
     void RestirStage::PrepareAttachments()
     {
-        foray::stages::RaytracingStage::PrepareAttachments();
+        foray::stages::RaytracingStage::CreateOutputImage();
 
         static const VkFormat colorFormat = VK_FORMAT_R32G32B32A32_SFLOAT;
         static const VkFormat depthFormat = VK_FORMAT_D32_SFLOAT;
@@ -235,7 +276,6 @@ namespace foray {
         VkExtent3D               extent                = {mContext->GetSwapchainSize().width, mContext->GetSwapchainSize().height, 1};
         VmaMemoryUsage           memoryUsage           = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
         VmaAllocationCreateFlags allocationCreateFlags = 0;
-        VkImageLayout            intialLayout          = VK_IMAGE_LAYOUT_UNDEFINED;
         VkImageAspectFlags       aspectMask            = VK_IMAGE_ASPECT_COLOR_BIT;
 
         core::ManagedImage::QuickTransition t;
@@ -244,18 +284,18 @@ namespace foray {
         t.AspectMask   = VK_IMAGE_ASPECT_DEPTH_BIT;
         t.NewLayout    = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
-        mPrevFrameBuffers[static_cast<int32_t>(PreviousFrame::Depth)].Create(mContext, memoryUsage, allocationCreateFlags, extent, depthUsageFlags, depthFormat, intialLayout,
+        mPrevFrameBuffers[static_cast<int32_t>(PreviousFrame::Depth)].Create(mContext, memoryUsage, allocationCreateFlags, extent, depthUsageFlags, depthFormat,
                                                                              VK_IMAGE_ASPECT_DEPTH_BIT, "PrevFrameDepth");
         mPrevFrameBuffers[static_cast<int32_t>(PreviousFrame::Depth)].TransitionLayout(t);
-        mPrevFrameBuffers[static_cast<int32_t>(PreviousFrame::WorldPos)].Create(mContext, memoryUsage, allocationCreateFlags, extent, imageUsageFlags, colorFormat, intialLayout,
-                                                                                aspectMask, "PrevFrameWorld");
+        mPrevFrameBuffers[static_cast<int32_t>(PreviousFrame::WorldPos)].Create(mContext, memoryUsage, allocationCreateFlags, extent, imageUsageFlags, colorFormat, aspectMask,
+                                                                                "PrevFrameWorld");
         t.AspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
         mPrevFrameBuffers[static_cast<int32_t>(PreviousFrame::WorldPos)].TransitionLayout(t);
-        mPrevFrameBuffers[static_cast<int32_t>(PreviousFrame::Normal)].Create(mContext, memoryUsage, allocationCreateFlags, extent, imageUsageFlags, colorFormat, intialLayout,
-                                                                              aspectMask, "PrevFrameNormal");
+        mPrevFrameBuffers[static_cast<int32_t>(PreviousFrame::Normal)].Create(mContext, memoryUsage, allocationCreateFlags, extent, imageUsageFlags, colorFormat, aspectMask,
+                                                                              "PrevFrameNormal");
         mPrevFrameBuffers[static_cast<int32_t>(PreviousFrame::Normal)].TransitionLayout(t);
-        mPrevFrameBuffers[static_cast<int32_t>(PreviousFrame::Albedo)].Create(mContext, memoryUsage, allocationCreateFlags, extent, imageUsageFlags, colorFormat, intialLayout,
-                                                                              aspectMask, "PrevFrameAlbedo");
+        mPrevFrameBuffers[static_cast<int32_t>(PreviousFrame::Albedo)].Create(mContext, memoryUsage, allocationCreateFlags, extent, imageUsageFlags, colorFormat, aspectMask,
+                                                                              "PrevFrameAlbedo");
         mPrevFrameBuffers[static_cast<int32_t>(PreviousFrame::Albedo)].TransitionLayout(t);
 
         RestirConfiguration& restirConfig = mRestirConfigurationUbo.GetData();
@@ -263,17 +303,15 @@ namespace foray {
         VkExtent2D   windowSize    = mContext->GetSwapchainSize();
         VkDeviceSize reservoirSize = sizeof(Reservoir);
         VkDeviceSize bufferSize    = windowSize.width * windowSize.height * reservoirSize * restirConfig.ReservoirSize;
-        for(size_t i = 0; i < mRestirStorageBuffers.size(); i++)
+        for(size_t i = 0; i < mReservoirBuffers.size(); i++)
         {
-            if(mRestirStorageBuffers[i].Exists())
+            if(mReservoirBuffers[i].Exists())
             {
-                mRestirStorageBuffers[i].Destroy();
+                mReservoirBuffers[i].Destroy();
             }
 
-            mBufferInfos_StorageBufferRead[i].resize(1);
-            mBufferInfos_StorageBufferWrite[i].resize(1);
-            mRestirStorageBuffers[i].Create(mContext, VkBufferUsageFlagBits::VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, bufferSize, VMA_MEMORY_USAGE_AUTO_PREFER_HOST, 0,
-                                            std::string("RestirStorageBuffer#") + std::to_string(i));
+            mReservoirBuffers[i].Create(mContext, VkBufferUsageFlagBits::VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, bufferSize, VMA_MEMORY_USAGE_AUTO_PREFER_HOST, 0,
+                                        std::string("RestirStorageBuffer#") + std::to_string(i));
         }
     }
 
@@ -281,6 +319,7 @@ namespace foray {
     {
         Module.LoadFromSource(context, Path);
     }
+
     void RestirStage::RtStageShader::Destroy()
     {
         Module.Destroy();
@@ -295,10 +334,10 @@ namespace foray {
             VkImageAspectFlags  AspectFlags;
         };
         std::vector<CopyInfo> copyInfos = {
-            {mGBufferStage->GetColorAttachmentByName(mGBufferStage->Albedo), PreviousFrame::Albedo, VK_IMAGE_ASPECT_COLOR_BIT},
-            {mGBufferStage->GetColorAttachmentByName(mGBufferStage->WorldspaceNormal), PreviousFrame::Normal, VK_IMAGE_ASPECT_COLOR_BIT},
-            {mGBufferStage->GetColorAttachmentByName(mGBufferStage->WorldspacePosition), PreviousFrame::WorldPos, VK_IMAGE_ASPECT_COLOR_BIT},
-            {mGBufferStage->GetDepthBuffer(), PreviousFrame::Depth, VK_IMAGE_ASPECT_DEPTH_BIT},
+            {mGBufferStage->GetImageOutput(mGBufferStage->AlbedoOutputName), PreviousFrame::Albedo, VK_IMAGE_ASPECT_COLOR_BIT},
+            {mGBufferStage->GetImageOutput(mGBufferStage->NormalOutputName), PreviousFrame::Normal, VK_IMAGE_ASPECT_COLOR_BIT},
+            {mGBufferStage->GetImageOutput(mGBufferStage->PositionOutputName), PreviousFrame::WorldPos, VK_IMAGE_ASPECT_COLOR_BIT},
+            {mGBufferStage->GetImageOutput(mGBufferStage->DepthOutputName), PreviousFrame::Depth, VK_IMAGE_ASPECT_DEPTH_BIT},
         };
 
         for(auto& copyInfo : copyInfos)
@@ -315,12 +354,12 @@ namespace foray {
                 barrier.SubresourceRange.aspectMask = copyInfo.AspectFlags;
                 imageMemoryBarriers.push_back(renderInfo.GetImageLayoutCache().Set(copyInfo.GBufferImage, barrier));
 
-                
+
                 // transition prevImageBuffer to TRANSFER DST OPTIMAL
 
                 renderInfo.GetImageLayoutCache().Set(prevFrameImage, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 
-                
+
                 barrier.NewLayout     = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
                 barrier.SrcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
                 barrier.DstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
@@ -377,90 +416,5 @@ namespace foray {
                                           .unnormalizedCoordinates = VK_FALSE};
             AssertVkResult(vkCreateSampler(mContext->Device(), &samplerCi, nullptr, &mGBufferSampler));
         }
-    }
-
-    std::shared_ptr<foray::core::DescriptorSetHelper::DescriptorInfo> RestirStage::MakeDescriptorInfos_RestirConfigurationUbo(VkShaderStageFlags shaderStage)
-    {
-        mRestirConfigurationUbo.GetUboBuffer().GetDeviceBuffer().FillVkDescriptorBufferInfo(&mRestirConfigurationBufferInfos[0]);
-        auto descriptorInfo = std::make_shared<foray::core::DescriptorSetHelper::DescriptorInfo>();
-        descriptorInfo->Init(VkDescriptorType::VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, shaderStage);
-        descriptorInfo->AddDescriptorSet(&mRestirConfigurationBufferInfos);
-        return descriptorInfo;
-    }
-
-    std::shared_ptr<foray::core::DescriptorSetHelper::DescriptorInfo> RestirStage::MakeDescriptorInfos_PrevFrameBuffers(VkShaderStageFlags shaderStage)
-    {
-        auto descriptorInfo = std::make_shared<foray::core::DescriptorSetHelper::DescriptorInfo>();
-        descriptorInfo->Init(VkDescriptorType::VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, shaderStage);
-
-        for(uint32_t i = 0; i < mNumPreviousFrameBuffers; i++)
-        {
-            mBufferInfos_PrevFrameBuffers[i].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-            mBufferInfos_PrevFrameBuffers[i].imageView   = mPrevFrameBuffers[i].GetImageView();
-            mBufferInfos_PrevFrameBuffers[i].sampler     = mGBufferSampler;
-        }
-
-        descriptorInfo->AddDescriptorSet(&mBufferInfos_PrevFrameBuffers);
-        return descriptorInfo;
-    }
-
-    std::shared_ptr<foray::core::DescriptorSetHelper::DescriptorInfo> RestirStage::MakeDescriptorInfos_StorageBufferReadSource(VkShaderStageFlags shaderStage)
-    {
-        auto descriptorInfo = std::make_shared<foray::core::DescriptorSetHelper::DescriptorInfo>();
-        descriptorInfo->Init(VkDescriptorType::VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, shaderStage);
-
-        uint32_t firstDescriptorSetIndex  = 0;
-        uint32_t secondDescriptorSetIndex = 1;
-        uint32_t storageBuffer1           = 0;
-        uint32_t storageBuffer2           = 1;
-        mRestirStorageBuffers[storageBuffer1].FillVkDescriptorBufferInfo(&mBufferInfos_StorageBufferRead[firstDescriptorSetIndex][0]);
-        mRestirStorageBuffers[storageBuffer2].FillVkDescriptorBufferInfo(&mBufferInfos_StorageBufferRead[secondDescriptorSetIndex][0]);
-
-        descriptorInfo->AddDescriptorSet(&mBufferInfos_StorageBufferRead[firstDescriptorSetIndex]);
-        descriptorInfo->AddDescriptorSet(&mBufferInfos_StorageBufferRead[secondDescriptorSetIndex]);
-        return descriptorInfo;
-    }
-
-    std::shared_ptr<foray::core::DescriptorSetHelper::DescriptorInfo> RestirStage::MakeDescriptorInfos_StorageBufferWriteTarget(VkShaderStageFlags shaderStage)
-    {
-        auto descriptorInfo = std::make_shared<foray::core::DescriptorSetHelper::DescriptorInfo>();
-        descriptorInfo->Init(VkDescriptorType::VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, shaderStage);
-
-        uint32_t firstDescriptorSetIndex  = 0;
-        uint32_t secondDescriptorSetIndex = 1;
-        uint32_t storageBuffer1           = 0;
-        uint32_t storageBuffer2           = 1;
-        mRestirStorageBuffers[storageBuffer2].FillVkDescriptorBufferInfo(&mBufferInfos_StorageBufferWrite[firstDescriptorSetIndex][0]);
-        mRestirStorageBuffers[storageBuffer1].FillVkDescriptorBufferInfo(&mBufferInfos_StorageBufferWrite[secondDescriptorSetIndex][0]);
-
-        descriptorInfo->AddDescriptorSet(&mBufferInfos_StorageBufferWrite[firstDescriptorSetIndex]);
-        descriptorInfo->AddDescriptorSet(&mBufferInfos_StorageBufferWrite[secondDescriptorSetIndex]);
-        return descriptorInfo;
-    }
-
-    std::shared_ptr<foray::core::DescriptorSetHelper::DescriptorInfo> RestirStage::MakeDescriptorInfos_GBufferImages(VkShaderStageFlags shaderStage)
-    {
-        auto descriptorInfo = std::make_shared<foray::core::DescriptorSetHelper::DescriptorInfo>();
-        descriptorInfo->Init(VkDescriptorType::VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, shaderStage);
-
-        const uint32_t gbufferImageCount = 5;
-        mGBufferImageInfos.resize(gbufferImageCount);
-        std::array<foray::core::ManagedImage*, gbufferImageCount> gbufferImages = {
-            mGBufferStage->GetColorAttachmentByName(mGBufferStage->Albedo),
-            mGBufferStage->GetColorAttachmentByName(mGBufferStage->WorldspaceNormal),
-            mGBufferStage->GetColorAttachmentByName(mGBufferStage->WorldspacePosition),
-            mGBufferStage->GetColorAttachmentByName(mGBufferStage->MotionVector),
-            mGBufferStage->GetDepthBuffer(),
-        };
-
-        for(size_t i = 0; i < gbufferImageCount; i++)
-        {
-            mGBufferImageInfos[i].imageView   = gbufferImages[i]->GetImageView();
-            mGBufferImageInfos[i].imageLayout = VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL;
-            mGBufferImageInfos[i].sampler     = mGBufferSampler;
-        }
-        mGBufferImageInfos[4].imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
-        descriptorInfo->AddDescriptorSet(&mGBufferImageInfos);
-        return descriptorInfo;
     }
 }  // namespace foray

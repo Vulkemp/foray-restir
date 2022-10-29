@@ -67,8 +67,6 @@ class RestirProject : public foray::base::DefaultAppBase
     void                                                              CollectEmissiveTriangles();
     void                                                              UploadLightsToGpu();
     foray::core::ManagedBuffer                                        mTriangleLightsBuffer;
-    std::vector<VkDescriptorBufferInfo>                               mTriangleLightsBufferInfos;
-    std::shared_ptr<foray::core::DescriptorSetHelper::DescriptorInfo> MakeDescriptorInfos_TriangleLights(VkShaderStageFlags shaderStage);
 
     std::vector<shader::TriLight> mTriangleLights;
 
