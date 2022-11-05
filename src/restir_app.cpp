@@ -136,17 +136,26 @@ void RestirProject::LoadEnvironmentMap()
         return;
     }
 
-    VkExtent3D ext3D{
-        .width  = imageLoader.GetInfo().Extent.width,
-        .height = imageLoader.GetInfo().Extent.height,
-        .depth  = 1,
-    };
-
-    foray::core::ManagedImage::CreateInfo ci("Environment map", VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, hdrVkFormat,
-                                             ext3D);
+    foray::core::ManagedImage::CreateInfo ci(VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, hdrVkFormat,
+                                             imageLoader.GetInfo().Extent,
+                                             "Environment map");
 
     imageLoader.InitManagedImage(&mContext, &mSphericalEnvMap, ci);
     imageLoader.Destroy();
+
+    VkSamplerCreateInfo samplerCi{.sType                   = VkStructureType::VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+                                  .magFilter               = VkFilter::VK_FILTER_LINEAR,
+                                  .minFilter               = VkFilter::VK_FILTER_LINEAR,
+                                  .addressModeU            = VkSamplerAddressMode::VK_SAMPLER_ADDRESS_MODE_REPEAT,
+                                  .addressModeV            = VkSamplerAddressMode::VK_SAMPLER_ADDRESS_MODE_REPEAT,
+                                  .addressModeW            = VkSamplerAddressMode::VK_SAMPLER_ADDRESS_MODE_REPEAT,
+                                  .anisotropyEnable        = VK_FALSE,
+                                  .compareEnable           = VK_FALSE,
+                                  .minLod                  = 0,
+                                  .maxLod                  = 0,
+                                  .unnormalizedCoordinates = VK_FALSE};
+
+    mSphericalEnvMapSampler.Init(&mContext, &mSphericalEnvMap, samplerCi);
 }
 
 void RestirProject::GenerateNoiseSource()
@@ -162,13 +171,13 @@ void RestirProject::CollectEmissiveTriangles()
 {
     // find cube mesh vertices and indices
     std::vector<foray::scene::Node*> nodesWithMeshInstances{};
-    mScene->FindNodesWithComponent<foray::scene::MeshInstance>(nodesWithMeshInstances);
+    mScene->FindNodesWithComponent<foray::scene::ncomp::MeshInstance>(nodesWithMeshInstances);
     std::vector<foray::scene::Vertex>* vertices;
     std::vector<uint32_t>*             indices;
     uint32_t                           materialIndex;
     for(foray::scene::Node* node : nodesWithMeshInstances)
     {
-        foray::scene::MeshInstance* meshInstance = node->GetComponent<foray::scene::MeshInstance>();
+        foray::scene::ncomp::MeshInstance* meshInstance = node->GetComponent<foray::scene::ncomp::MeshInstance>();
         foray::scene::Mesh*         mesh         = meshInstance->GetMesh();
         auto                        primitives   = mesh->GetPrimitives();
         foray::logger()->info("Primitive size: {}", primitives.size());
@@ -182,7 +191,7 @@ void RestirProject::CollectEmissiveTriangles()
         materialIndex = primitives[0].MaterialIndex;
 
         // get geometry world transform
-        foray::scene::Transform* transform = node->GetTransform();
+        foray::scene::ncomp::Transform* transform    = node->GetTransform();
         glm::mat4                transformMat = transform->GetGlobalMatrix();
 
         // create triangles from vertices & indices
@@ -288,7 +297,7 @@ void RestirProject::PrepareImguiWindow()
 void RestirProject::ConfigureStages()
 {
     mGbufferStage.Init(&mContext, mScene.get());
-    mRestirStage.Init(&mContext, mScene.get(), &mSphericalEnvMap, &mNoiseSource.GetImage(), &mGbufferStage, this);
+    mRestirStage.Init(&mContext, mScene.get(), &mSphericalEnvMapSampler, &mNoiseSource.GetSampler(), &mGbufferStage, this);
     UpdateOutputs();
 
     mImguiStage.Init(&mContext, mOutputs[mCurrentOutput]);
@@ -334,14 +343,6 @@ void RestirProject::ApiRender(foray::base::FrameRenderInfo& renderInfo)
 
     renderInfo.GetInFlightFrame()->PrepareSwapchainImageForPresent(commandBuffer, renderInfo.GetImageLayoutCache());
     commandBuffer.Submit();
-}
-
-void RestirProject::ApiQueryResultsAvailable(uint64_t frameIndex)
-{
-#ifdef ENABLE_GBUFFER_BENCH
-    mGbufferStage.GetBenchmark().LogQueryResults(frameIndex);
-    mDisplayedLog = mGbufferStage.GetBenchmark().GetLogs().back();
-#endif  // ENABLE_GBUFFER_BENCH
 }
 
 void RestirProject::ApiOnResized(VkExtent2D size)

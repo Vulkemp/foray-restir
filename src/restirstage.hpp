@@ -37,11 +37,16 @@ namespace foray {
             uint32_t  NumSamples;
         };
 
+        struct PushConstantRestir
+        {
+            uint32_t DiscardPrevFrameReservoir{true};
+        } mPushConstantRestir;
+
       public:
         virtual void Init(foray::core::Context*        context,
                           foray::scene::Scene*         scene,
-                          foray::core::ManagedImage*   envmap,
-                          foray::core::ManagedImage*   noiseSource,
+                          foray::core::CombinedImageSampler* envmap,
+                          foray::core::CombinedImageSampler* noiseSource,
                           foray::stages::GBufferStage* gbufferStage,
                           RestirProject*               restirApp);
         virtual void CreateRaytraycingPipeline() override;
@@ -51,6 +56,7 @@ namespace foray {
         virtual void CreatePipelineLayout() override;
 
         virtual void RecordFrame(VkCommandBuffer commandBuffer, base::FrameRenderInfo& renderInfo) override;
+        void         RecordFrame_Prepare(VkCommandBuffer commandBuffer, base::FrameRenderInfo& renderInfo);
 
         virtual void SetupDescriptors() override;
         virtual void CreateDescriptorSets() override;

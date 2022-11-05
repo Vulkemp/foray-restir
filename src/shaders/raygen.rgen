@@ -14,8 +14,15 @@
 #include "../../foray/src/shaders/rt_common/imageoutput.glsl"
 #include "../../foray/src/shaders/common/lcrng.glsl"
 #include "../../foray/src/shaders/common/noisetex.glsl"
-#include "../../foray/src/shaders/rt_common/tracerconfig.glsl"
 #endif
+
+layout(push_constant) uniform TracerConfigBlock
+{
+    /// @brief Per frame unique seed for random number generation
+    uint RngSeed;
+	uint DiscardPrevFrameReservoir;
+}
+TracerConfig;
 
 layout(binding = 11,  set = 0) readonly uniform RestirConfiguration
 {
@@ -122,6 +129,13 @@ void main()
 
 	uvec2 pixelCoord = gl_LaunchIDEXT.xy;
 
+	bool activatePrintf = false;
+	if(pixelCoord.x == 200 && pixelCoord.y == 200)
+	{
+		activatePrintf = true;
+		//debugPrintfEXT("Processing pixel %d, %d \n", pixelCoord.x, pixelCoord.y);
+	}
+
 	const vec2 pixelCenter = vec2(pixelCoord) + vec2(0.5);
 	const vec2 inUV = pixelCenter/vec2(gl_LaunchSizeEXT.xy);
 	vec2 d = inUV * 2.0 - 1.0;
@@ -210,9 +224,9 @@ void main()
 		vec3 normal = normalize(vec3(light.normal.xyz));
 
 		// lights that don't face surface are discarded?
-		float normalToLight = clamp(dot(wi, normal), 0, 1);
+		float normalToLight = clamp(dot(wi, normal), 1e-4, 1);
 		float triangleAreaSize = light.normal.w; // the bigger the triangle, the smaller the probability
-		lightSampleProb /= normalToLight * triangleAreaSize; // the worse the normalToLight angle, the smaller the probability
+		lightSampleProb *= normalToLight * triangleAreaSize; // the worse the normalToLight angle, the smaller the probability
 		
 		//debugPrintfEXT("normalToLightFactor %f, triangleAreaSize %f, lightSampleProb %f \n", normalToLight, triangleAreaSize,lightSampleProb);
 		lightNormal = vec4(normal, 1.0f);
@@ -226,7 +240,7 @@ void main()
 //		);
 		float pHat = 1.0f;
 
-		addSampleToReservoir(res, lightSamplePos, lightNormal, lightSampleLum, selected_idx, pHat, lightSampleProb, randomSeed);
+		addSampleToReservoir(res, lightSamplePos, lightNormal, lightSampleLum, selected_idx, pHat, lightSampleProb, randomSeed, activatePrintf);
 	}
 
 	// print Reservoir
@@ -246,6 +260,7 @@ void main()
 	bool shadowed = true;
 	if(true)
 	{
+		// check if the 4 selected samples are have visibility to surface point
 		for (int i = 0; i < RESERVOIR_SIZE; i++) {
 			shadowed = testVisibility(worldPos, res.samples[i].position_emissionLum.xyz);
 			//shadowed = testVisibility(worldPos, lightSamplePos2);
@@ -305,7 +320,7 @@ void main()
 	bool useAlbedoDiff = true;
 
 	// TEMPORAL REUSE
-	if(positionDiffValid && normalDiffValid && albedoDiffValid)
+	if(TracerConfig.DiscardPrevFrameReservoir == 0 && positionDiffValid && normalDiffValid && albedoDiffValid)
 	{
 		uvec2 prevFragCoords = uvec2(oldCoords);
 		Reservoir prevRes = prevFrameReservoirs.prevFrameReservoirs[prevFragCoords.y * RestirConfig.ScreenSize.x + prevFragCoords.x];
@@ -329,7 +344,7 @@ void main()
 			pHat[i] = 1.0f;
 		}
 
-		combineReservoirs(res, prevRes, pHat, randomSeed);
+		combineReservoirs(res, prevRes, pHat, randomSeed, activatePrintf);
 	}
 
 	uint reservoirIndex = pixelCoord.y * RestirConfig.ScreenSize.x + pixelCoord.x;
@@ -352,9 +367,12 @@ void main()
 
 
 	//debugPrintfEXT("Brightness pHat %f , number of samples %d \n", res.samples[0].pHat, res.numStreamSamples);
-	vec4 finalColor = vec4(vec3(res.samples[0].pHat) * albedo,1.0f);
+	vec4 finalColor = vec4(vec3(res.samples[0].w), 1.0f);
 	imageStore(ImageOutput, ivec2(pixelCoord), vec4(finalColor));
-	imageStore(ImageOutput, ivec2(pixelCoord), vec4(!shadowed));
+	if(inUV.x > 0.5)
+	{
+		imageStore(ImageOutput, ivec2(pixelCoord), vec4(!shadowed));
+	}
 //	imageStore(ImageOutput, ivec2(pixelCoord), vec4(!shadowed));
 //	if(colorGreen&&colorRed&&colorBlue)
 //	{

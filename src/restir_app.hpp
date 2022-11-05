@@ -50,7 +50,6 @@ class RestirProject : public foray::base::DefaultAppBase
     virtual void ApiOnEvent(const foray::osi::Event* event) override;
 
     virtual void ApiRender(foray::base::FrameRenderInfo& renderInfo) override;
-    virtual void ApiQueryResultsAvailable(uint64_t frameIndex) override;
     virtual void ApiOnResized(VkExtent2D size) override;
     virtual void ApiDestroy() override;
     virtual void ApiOnShadersRecompiled() override;
@@ -64,9 +63,9 @@ class RestirProject : public foray::base::DefaultAppBase
     void LoadEnvironmentMap();
     void GenerateNoiseSource();
 
-    void                                                              CollectEmissiveTriangles();
-    void                                                              UploadLightsToGpu();
-    foray::core::ManagedBuffer                                        mTriangleLightsBuffer;
+    void                       CollectEmissiveTriangles();
+    void                       UploadLightsToGpu();
+    foray::core::ManagedBuffer mTriangleLightsBuffer;
 
     std::vector<shader::TriLight> mTriangleLights;
 
@@ -79,7 +78,9 @@ class RestirProject : public foray::base::DefaultAppBase
     /// @brief Generates a raytraced image
     foray::RestirStage mRestirStage;
 
-    foray::core::ManagedImage mSphericalEnvMap{};
+    foray::core::ManagedImage         mSphericalEnvMap{};
+    foray::core::CombinedImageSampler mSphericalEnvMapSampler{};
+
 
     foray::util::NoiseSource mNoiseSource;
 
