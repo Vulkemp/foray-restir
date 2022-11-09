@@ -104,7 +104,7 @@ namespace foray {
         std::vector<VkDescriptorSetLayout> descriptorSetLayouts = {mDescriptorSet.GetDescriptorSetLayout(), mDescriptorSetsReservoirSwap[0].GetDescriptorSetLayout()};
         mPipelineLayout.AddDescriptorSetLayouts(descriptorSetLayouts);
         mPipelineLayout.AddPushConstantRange<RaytracingStage::PushConstant>(RTSTAGEFLAGS);
-        mPipelineLayout.AddPushConstantRange<PushConstantRestir>(RTSTAGEFLAGS, sizeof(RaytracingStage::PushConstant));
+        //mPipelineLayout.AddPushConstantRange<PushConstantRestir>(RTSTAGEFLAGS, sizeof(RaytracingStage::PushConstant));
         mPipelineLayout.Build(mContext);
     }
 
@@ -169,7 +169,7 @@ namespace foray {
 
         RecordFrame_Prepare(commandBuffer, renderInfo);
 
-        vkCmdPushConstants(commandBuffer, mPipelineLayout, RTSTAGEFLAGS, sizeof(PushConstant), sizeof(PushConstantRestir), &mPushConstantRestir);
+        //vkCmdPushConstants(commandBuffer, mPipelineLayout, RTSTAGEFLAGS, sizeof(PushConstant), sizeof(PushConstantRestir), &mPushConstantRestir);
         mPushConstantRestir.DiscardPrevFrameReservoir = false;
 
         vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, mPipelineLayout, 1, 1, &mDescriptorSetsReservoirSwap[frameNumber % 2].GetDescriptorSet(), 0,

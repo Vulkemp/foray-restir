@@ -16,7 +16,7 @@
 
 #include "structs.hpp"
 
-#define USE_PRINTF
+//#define USE_PRINTF
 
 void RestirProject::ApiBeforeInstanceCreate(vkb::InstanceBuilder& instanceBuilder)
 {
@@ -36,6 +36,8 @@ void RestirProject::ApiBeforeDeviceSelection(vkb::PhysicalDeviceSelector& pds)
 #endif
 }
 
+std::vector<std::string> g_ShaderPrintfLog;
+
 // And this is the callback that the validator will call
 VkBool32 myDebugCallback(VkDebugReportFlagsEXT      flags,
                          VkDebugReportObjectTypeEXT objectType,
@@ -46,10 +48,11 @@ VkBool32 myDebugCallback(VkDebugReportFlagsEXT      flags,
                          const char*                pMessage,
                          void*                      pUserData)
 {
-    if(flags & VK_DEBUG_REPORT_ERROR_BIT_EXT)
-    {
-        printf("debugPrintfEXT: %s", pMessage);
-    }
+
+    printf("debugPrintfEXT: %s", pMessage);
+    g_ShaderPrintfLog.push_back(pMessage);
+    printf("num %d", g_ShaderPrintfLog.size());
+ 
 
     return false;
 }
@@ -66,9 +69,6 @@ void RestirProject::ApiInit()
     ci.flags                              = VK_DEBUG_REPORT_INFORMATION_BIT_EXT;
     ci.pUserData                          = nullptr;
 
-    PFN_vkCreateDebugReportCallbackEXT pfn_vkCreateDebugReportCallbackEXT =
-        reinterpret_cast<PFN_vkCreateDebugReportCallbackEXT>(vkGetDeviceProcAddr(mContext.Device(), "vkCreateDebugReportCallbackEXT"));
-
     PFN_vkCreateDebugReportCallbackEXT CreateDebugReportCallback = VK_NULL_HANDLE;
     CreateDebugReportCallback                                    = (PFN_vkCreateDebugReportCallbackEXT)vkGetInstanceProcAddr(mContext.Instance(), "vkCreateDebugReportCallbackEXT");
 
@@ -76,6 +76,8 @@ void RestirProject::ApiInit()
     CreateDebugReportCallback(mContext.Instance(), &ci, nullptr, &debugCallbackHandle);
 #endif
 
+    
+    //mRenderLoop.GetFrameTiming().DisableFpsLimit();
     foray::logger()->set_level(spdlog::level::debug);
     LoadEnvironmentMap();
     GenerateNoiseSource();
@@ -290,6 +292,16 @@ void RestirProject::PrepareImguiWindow()
         }
 #endif  // ENABLE_GBUFFER_BENCH
 
+        ImGui::End();
+
+        ImGui::Begin("printf trace");
+        ImGui::Text("%d", g_ShaderPrintfLog.size());
+        ImGui::BeginChild("Scrolling");
+        for(int n = 0; n < g_ShaderPrintfLog.size(); n++)
+        {
+            ImGui::Text(g_ShaderPrintfLog[n].c_str());
+        }
+        ImGui::EndChild();
         ImGui::End();
     });
 }

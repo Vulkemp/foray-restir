@@ -96,6 +96,7 @@ void combineReservoirs(inout Reservoir self, Reservoir other, float pHat[RESERVO
 			);
 		}
 		if (self.samples[i].w > 0.0f) {
+			// w?
 			self.samples[i].w = self.samples[i].sumWeights / (self.numStreamSamples * self.samples[i].pHat);
 		}
 	}
