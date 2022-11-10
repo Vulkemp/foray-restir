@@ -1,8 +1,7 @@
 #pragma once
 #include <array>
-#include <core/foray_descriptorset.hpp>
-#include <stages/foray_gbuffer.hpp>
-#include <stages/foray_raytracingstage.hpp>
+#include <foray_api.hpp>
+#include <util/foray_historyimage.hpp>
 #include <util/foray_managedubo.hpp>
 
 class RestirProject;
@@ -11,7 +10,7 @@ class RestirProject;
 #define RESERVOIR_SIZE 4
 
 namespace foray {
-    class RestirStage : public foray::stages::RaytracingStage
+    class RestirStage : public foray::stages::ExtRaytracingStage
     {
       protected:
         struct RestirConfiguration
@@ -39,36 +38,19 @@ namespace foray {
 
         struct PushConstantRestir
         {
-            uint32_t DiscardPrevFrameReservoir{true};
+            uint32_t RngSeed                   = 0U;
+            VkBool32 DiscardPrevFrameReservoir = VK_TRUE;
         } mPushConstantRestir;
 
       public:
-        virtual void Init(foray::core::Context*        context,
-                          foray::scene::Scene*         scene,
+        virtual void Init(foray::core::Context*              context,
+                          foray::scene::Scene*               scene,
                           foray::core::CombinedImageSampler* envmap,
-                          foray::core::CombinedImageSampler* noiseSource,
-                          foray::stages::GBufferStage* gbufferStage,
-                          RestirProject*               restirApp);
-        virtual void CreateRaytraycingPipeline() override;
-        virtual void OnShadersRecompiled() override;
-        virtual void OnResized(const VkExtent2D& extent) override;
+                          foray::core::ManagedImage*         noiseSource,
+                          foray::stages::GBufferStage*       gbufferStage,
+                          RestirProject*                     restirApp);
 
-        virtual void CreatePipelineLayout() override;
-
-        virtual void RecordFrame(VkCommandBuffer commandBuffer, base::FrameRenderInfo& renderInfo) override;
-        void         RecordFrame_Prepare(VkCommandBuffer commandBuffer, base::FrameRenderInfo& renderInfo);
-
-        virtual void SetupDescriptors() override;
-        virtual void CreateDescriptorSets() override;
-
-        virtual void CreateFixedSizeComponents() override;
-        virtual void DestroyFixedComponents() override;
-        virtual void CreateResolutionDependentComponents() override;
-        virtual void DestroyResolutionDependentComponents() override;
-
-
-        virtual void Destroy() override;
-        virtual void DestroyShaders() override;
+        virtual void Resize(const VkExtent2D& extent) override;
 
         struct RtStageShader
         {
@@ -81,45 +63,72 @@ namespace foray {
 
       protected:
         RestirProject* mRestirApp{};
-        void           SetResolutionDependentDescriptors();
-        virtual void   UpdateDescriptors() override;
-        void           PrepareAttachments();
 
-        void CopyGBufferToPrevFrameBuffers(VkCommandBuffer commandBuffer, base::FrameRenderInfo& renderInfo);
+        virtual void CreateOutputImages() override;
+        virtual void DestroyOutputImages() override;
 
-        void                               CreateGBufferSampler();
-        VkSampler                          mGBufferSampler{};
-        std::vector<VkDescriptorImageInfo> mGBufferImageInfos;
-        foray::stages::GBufferStage*       mGBufferStage{};
+        virtual void CreateRtPipeline() override;
+        virtual void DestroyRtPipeline() override;
 
-        foray::core::ManagedImage                 mPreviousFrameDepthBuffer_Read;
-        foray::core::ManagedImage                 mPreviousFrameDepthBuffer_Write;
-        std::array<foray::core::ManagedBuffer, 2> mPrevFrameDepthImages;
+        virtual void CreateOrUpdateDescriptors() override;
+        virtual void DestroyDescriptors() override;
+
+        virtual void CustomObjectsCreate() override;
+        virtual void CustomObjectsDestroy() override;
+
+        virtual void CreatePipelineLayout() override;
+
+        virtual void RecordFramePrepare(VkCommandBuffer cmdBuffer, base::FrameRenderInfo& renderInfo) override;
+        virtual void RecordFrameBind(VkCommandBuffer cmdBuffer, base::FrameRenderInfo& renderInfo) override;
+        virtual void RecordFrameTraceRays(VkCommandBuffer cmdBuffer, base::FrameRenderInfo& renderInfo) override;
+
+        void GetGBufferImages();
+
+        enum UsedGBufferImages
+        {
+            GBUFFER_ALBEDO = 0,
+            GBUFFER_NORMAL = 1,
+            GBUFFER_POS    = 2,
+            GBUFFER_MOTION = 3,
+        };
+
+        foray::stages::GBufferStage*              mGBufferStage{};
+        std::array<core::ManagedImage*, 4>        mGBufferImages;
+        std::array<core::CombinedImageSampler, 4> mGBufferImagesSampled;
 
 
         RtStageShader mRaygen{"shaders/raygen.rgen"};
         RtStageShader mDefault_AnyHit{"shaders/ray-default/anyhit.rahit"};
-        RtStageShader mDefault_ClosestHit{"shaders/ray-default/closesthit.rchit"};
-        RtStageShader mDefault_Miss{"shaders/ray-default/miss.rmiss"};
 
         RtStageShader mRtShader_VisibilityTestMiss{"shaders/restir/hwVisibilityTest.rmiss"};
         RtStageShader mRtShader_VisibilityTestHit{"shaders/restir/hwVisibilityTest.rchit"};
 
         // previous frame infos
-        enum class PreviousFrame
+        enum PreviousFrame
         {
             Albedo,
             Normal,
             WorldPos,
-            Depth,
         };
-        const uint32_t                           mNumPreviousFrameBuffers{4};
-        std::array<foray::core::ManagedImage, 4> mPrevFrameBuffers;
-        std::vector<VkDescriptorImageInfo>       mBufferInfos_PrevFrameBuffers;
+        std::array<foray::util::HistoryImage, 3>  mHistoryImages;
+        std::array<core::CombinedImageSampler, 3> mHistoryImagesSampled;
 
         std::array<foray::core::ManagedBuffer, 2> mReservoirBuffers;
         std::array<foray::core::DescriptorSet, 2> mDescriptorSetsReservoirSwap;
 
         foray::util::ManagedUbo<RestirConfiguration> mRestirConfigurationUbo;
+
+        static constexpr VkSamplerCreateInfo mSamplerCi = VkSamplerCreateInfo{.sType                   = VkStructureType::VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+                                                                              .magFilter               = VkFilter::VK_FILTER_NEAREST,
+                                                                              .minFilter               = VkFilter::VK_FILTER_NEAREST,
+                                                                              .addressModeU            = VkSamplerAddressMode::VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER,
+                                                                              .addressModeV            = VkSamplerAddressMode::VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER,
+                                                                              .addressModeW            = VkSamplerAddressMode::VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER,
+                                                                              .anisotropyEnable        = VK_FALSE,
+                                                                              .compareEnable           = VK_FALSE,
+                                                                              .minLod                  = 0,
+                                                                              .maxLod                  = 0,
+                                                                              .borderColor             = VkBorderColor::VK_BORDER_COLOR_FLOAT_TRANSPARENT_BLACK,
+                                                                              .unnormalizedCoordinates = VK_FALSE};
     };
 }  // namespace foray

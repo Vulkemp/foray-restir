@@ -1,7 +1,6 @@
 #pragma once
 
 #include "configurepath.cmakegenerated.hpp"
-#include <foray_exception.hpp>
 
 #include <algorithm>
 #include <array>
@@ -18,17 +17,10 @@
 #include <unordered_map>
 #include <vector>
 
-#include "restirstage.hpp"
-#include "stages/foray_gbuffer.hpp"
-#include "stages/foray_imagetoswapchain.hpp"
-#include "stages/foray_imguistage.hpp"
-#include "stages/foray_raytracingstage.hpp"
-#include <osi/foray_env.hpp>
-
 #include "structs.hpp"
-#include <base/foray_defaultappbase.hpp>
-#include <scene/foray_scenegraph.hpp>
 #include <stdint.h>
+
+#include <foray_api.hpp>
 #include <util/foray_noisesource.hpp>
 
 #include "restirstage.hpp"
@@ -42,9 +34,7 @@ class RestirProject : public foray::base::DefaultAppBase
     ~RestirProject(){};
 
   protected:
-    virtual void ApiBeforeInstanceCreate(vkb::InstanceBuilder& instanceBuilder) override;
-    virtual void ApiBeforeDeviceBuilding(vkb::DeviceBuilder& deviceBuilder) override;
-    virtual void ApiBeforeDeviceSelection(vkb::PhysicalDeviceSelector& pds) override;
+    virtual void ApiBeforeInit() override;
 
     virtual void ApiInit() override;
     virtual void ApiOnEvent(const foray::osi::Event* event) override;
@@ -89,10 +79,6 @@ class RestirProject : public foray::base::DefaultAppBase
     std::unordered_map<std::string_view, foray::core::ManagedImage*> mOutputs;
     std::string_view                                                 mCurrentOutput = "";
     bool                                                             mOutputChanged = false;
-
-#ifdef ENABLE_GBUFFER_BENCH
-    foray::BenchmarkLog mDisplayedLog;
-#endif  // ENABLE_GBUFFER_BENCH
 
     void UpdateOutputs();
     void ApplyOutput();

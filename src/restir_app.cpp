@@ -1,40 +1,14 @@
 #include "restir_app.hpp"
-#include <bench/foray_hostbenchmark.hpp>
-#include <core/foray_managedimage.hpp>
-#include <gltf/foray_modelconverter.hpp>
 #include <imgui/imgui.h>
-#include <scene/components/foray_camera.hpp>
-#include <scene/components/foray_freecameracontroller.hpp>
-#include <scene/components/foray_meshinstance.hpp>
-#include <scene/components/foray_transform.hpp>
-#include <scene/foray_node.hpp>
-#include <scene/foray_mesh.hpp>
-#include <scene/globalcomponents/foray_cameramanager.hpp>
-#include <scene/globalcomponents/foray_tlasmanager.hpp>
+
 #include <util/foray_imageloader.hpp>
-#include <vulkan/vulkan.h>
+
+#include <scene/components/foray_node_components.hpp>
+#include <scene/foray_mesh.hpp>
 
 #include "structs.hpp"
 
-//#define USE_PRINTF
-
-void RestirProject::ApiBeforeInstanceCreate(vkb::InstanceBuilder& instanceBuilder)
-{
-#ifdef USE_PRINTF
-    instanceBuilder.add_validation_feature_enable(VK_VALIDATION_FEATURE_ENABLE_DEBUG_PRINTF_EXT);
-    instanceBuilder.enable_extension(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
-    instanceBuilder.enable_extension(VK_EXT_DEBUG_REPORT_EXTENSION_NAME);
-#endif
-}
-
-void RestirProject::ApiBeforeDeviceBuilding(vkb::DeviceBuilder& deviceBuilder) {}
-
-void RestirProject::ApiBeforeDeviceSelection(vkb::PhysicalDeviceSelector& pds)
-{
-#ifdef USE_PRINTF
-    pds.add_required_extension(VK_KHR_SHADER_NON_SEMANTIC_INFO_EXTENSION_NAME);
-#endif
-}
+// #define USE_PRINTF
 
 std::vector<std::string> g_ShaderPrintfLog;
 
@@ -51,32 +25,24 @@ VkBool32 myDebugCallback(VkDebugReportFlagsEXT      flags,
 
     printf("debugPrintfEXT: %s", pMessage);
     g_ShaderPrintfLog.push_back(pMessage);
-    printf("num %d", g_ShaderPrintfLog.size());
+    printf("num %d", (int)g_ShaderPrintfLog.size());
  
 
     return false;
 }
 
-void RestirProject::ApiInit()
+void RestirProject::ApiBeforeInit()
 {
 #ifdef USE_PRINTF
-    VkDebugReportCallbackEXT debugCallbackHandle;
-
-    // Populate the VkDebugReportCallbackCreateInfoEXT
-    VkDebugReportCallbackCreateInfoEXT ci = {};
-    ci.sType                              = VK_STRUCTURE_TYPE_DEBUG_REPORT_CALLBACK_CREATE_INFO_EXT;
-    ci.pfnCallback                        = myDebugCallback;
-    ci.flags                              = VK_DEBUG_REPORT_INFORMATION_BIT_EXT;
-    ci.pUserData                          = nullptr;
-
-    PFN_vkCreateDebugReportCallbackEXT CreateDebugReportCallback = VK_NULL_HANDLE;
-    CreateDebugReportCallback                                    = (PFN_vkCreateDebugReportCallbackEXT)vkGetInstanceProcAddr(mContext.Instance(), "vkCreateDebugReportCallbackEXT");
-
-    // Create the callback handle
-    CreateDebugReportCallback(mContext.Instance(), &ci, nullptr, &debugCallbackHandle);
+    mInstance.SetEnableDebugReport(true);
+#else
+    mInstance.SetDebugReportFunc(&myDebugCallback);
+    mInstance.SetEnableDebugReport(false);
 #endif
+}
 
-    
+void RestirProject::ApiInit()
+{
     //mRenderLoop.GetFrameTiming().DisableFpsLimit();
     foray::logger()->set_level(spdlog::level::debug);
     LoadEnvironmentMap();
@@ -98,7 +64,7 @@ void RestirProject::ApiOnEvent(const foray::osi::Event* event)
 void RestirProject::loadScene()
 {
     std::vector<std::string> scenePaths({
-        "../data/scenes/Sponza/glTF/Sponza.gltf",
+        "../data/scenes/sponza/glTF/Sponza.gltf",
         "../data/scenes/cube/cube2.gltf",
     });
 
@@ -285,21 +251,14 @@ void RestirProject::PrepareImguiWindow()
             ImGui::EndCombo();
         }
 
-#ifdef ENABLE_GBUFFER_BENCH
-        if(mDisplayedLog.Timestamps.size() > 0 && ImGui::CollapsingHeader("GBuffer Benchmark"))
-        {
-            mDisplayedLog.PrintImGui();
-        }
-#endif  // ENABLE_GBUFFER_BENCH
-
         ImGui::End();
 
         ImGui::Begin("printf trace");
-        ImGui::Text("%d", g_ShaderPrintfLog.size());
+        ImGui::Text("%d", (int)g_ShaderPrintfLog.size());
         ImGui::BeginChild("Scrolling");
         for(int n = 0; n < g_ShaderPrintfLog.size(); n++)
         {
-            ImGui::Text(g_ShaderPrintfLog[n].c_str());
+            ImGui::Text("%s", g_ShaderPrintfLog[n].c_str());
         }
         ImGui::EndChild();
         ImGui::End();
@@ -309,7 +268,7 @@ void RestirProject::PrepareImguiWindow()
 void RestirProject::ConfigureStages()
 {
     mGbufferStage.Init(&mContext, mScene.get());
-    mRestirStage.Init(&mContext, mScene.get(), &mSphericalEnvMapSampler, &mNoiseSource.GetSampler(), &mGbufferStage, this);
+    mRestirStage.Init(&mContext, mScene.get(), &mSphericalEnvMapSampler, &mNoiseSource.GetImage(), &mGbufferStage, this);
     UpdateOutputs();
 
     mImguiStage.Init(&mContext, mOutputs[mCurrentOutput]);
@@ -360,11 +319,11 @@ void RestirProject::ApiRender(foray::base::FrameRenderInfo& renderInfo)
 void RestirProject::ApiOnResized(VkExtent2D size)
 {
     mScene->InvokeOnResized(size);
-    mGbufferStage.OnResized(size);
-    mRestirStage.OnResized(size);
+    mGbufferStage.Resize(size);
+    mRestirStage.Resize(size);
     UpdateOutputs();
-    mImguiStage.OnResized(size);
-    mImageToSwapchainStage.OnResized(size);
+    mImguiStage.Resize(size);
+    mImageToSwapchainStage.Resize(size);
 }
 
 void lUpdateOutput(std::unordered_map<std::string_view, foray::core::ManagedImage*>& map, foray::stages::RenderStage& stage, const std::string_view name)
@@ -378,8 +337,7 @@ void RestirProject::UpdateOutputs()
     lUpdateOutput(mOutputs, mGbufferStage, foray::stages::GBufferStage::AlbedoOutputName);
     lUpdateOutput(mOutputs, mGbufferStage, foray::stages::GBufferStage::PositionOutputName);
     lUpdateOutput(mOutputs, mGbufferStage, foray::stages::GBufferStage::NormalOutputName);
-    lUpdateOutput(mOutputs, mGbufferStage, foray::stages::GBufferStage::MotionOutputName);
-    lUpdateOutput(mOutputs, mRestirStage, foray::stages::RaytracingStage::RaytracingRenderTargetName);
+    lUpdateOutput(mOutputs, mRestirStage, foray::stages::ExtRaytracingStage::OutputName);
 
     if(mCurrentOutput.size() == 0 || !mOutputs.contains(mCurrentOutput))
     {
@@ -398,6 +356,6 @@ void RestirProject::ApplyOutput()
 {
     vkDeviceWaitIdle(mContext.Device());
     auto output = mOutputs[mCurrentOutput];
-    mImguiStage.SetTargetImage(output);
+    mImguiStage.SetBackgroundImage(output);
     mImageToSwapchainStage.SetSrcImage(output);
 }

@@ -20,6 +20,7 @@ layout(push_constant) uniform TracerConfigBlock
 {
     /// @brief Per frame unique seed for random number generation
     uint RngSeed;
+	uint DiscardPrevFrameReservoir;
 }
 TracerConfig;
 
@@ -64,14 +65,12 @@ layout(set = 1, binding = 1) buffer PrevFrameReservoirs { Reservoir prevFrameRes
 #define GBUFFER_NORMAL 1
 #define GBUFFER_POS 2
 #define GBUFFER_MOTION 3
-#define GBUFFER_DEPTH 4
-layout(set = 0, binding = 14) uniform sampler2D GBufferTextures[5];
+layout(set = 0, binding = 14) uniform sampler2D GBufferTextures[];
 
 #define PREVIOUSFRAME_ALBEDO 0
 #define PREVIOUSFRAME_NORMAL 1
 #define PREVIOUSFRAME_POS 2
-#define PREVIOUSFRAME_DEPTH 3
-layout(set = 0, binding = 15) uniform sampler2D PreviousFrameImages[4];
+layout(set = 0, binding = 15) uniform sampler2D PreviousFrameImages[];
 layout(std140, set = 0, binding = 16) buffer TriLights{ TriLight triLights[]; } triLights;
 
 // Declare hitpayloads
@@ -106,9 +105,9 @@ bool testVisibility(vec3 p1, vec3 p2) {
 		MainTlas,            // acceleration structure
 		gl_RayFlagsTerminateOnFirstHitEXT | gl_RayFlagsOpaqueEXT | gl_RayFlagsSkipClosestHitShaderEXT,       // rayFlags
 		0xFF,           // cullMask
-		1,              // sbtRecordOffset
+		0,              // sbtRecordOffset
 		0,              // sbtRecordStride
-		1,              // missIndex
+		0,              // missIndex
 		p1,             // ray origin
 		tMin,           // ray min range
 		dir,            // ray direction
@@ -133,11 +132,11 @@ void main()
 
 	// =========================================================================================
 	// random number generation
-	ivec2 texSize = textureSize(NoiseSource, 0);
+	ivec2 texSize = imageSize(NoiseSource);
 	ivec2 texel = ivec2(pixelCoord.x % texSize.x, pixelCoord.y % texSize.y);
 
 	uint left = TracerConfig.RngSeed;
-	uint right = texelFetch(NoiseSource, texel, 0).x;
+	uint right = imageLoad(NoiseSource, texel).x;
 	for (int i = 0; i < 4; i++)
 	{
 		uint temp = left & 0xFFFF | (right << 16);
@@ -153,7 +152,6 @@ void main()
 	vec3 gbuf_albedo = texelFetch(GBufferTextures[GBUFFER_ALBEDO], ivec2(pixelCoord), 0).xyz;
 	vec3 gbuf_pos = texelFetch(GBufferTextures[GBUFFER_POS], ivec2(pixelCoord), 0).xyz;
 	vec3 gbuf_normal = texelFetch(GBufferTextures[GBUFFER_NORMAL], ivec2(pixelCoord), 0).xyz;
-	float gbuf_depth = texelFetch(GBufferTextures[GBUFFER_DEPTH], ivec2(pixelCoord), 0).x;
 
 	// =========================================================================================
 	// create reservoir with initial samples
