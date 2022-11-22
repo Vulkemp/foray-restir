@@ -30,10 +30,20 @@ namespace foray {
             uint32_t   NumTriLights;
         };
 
-        struct Reservoir
+        struct alignas(16) LightSample
         {
-            glm::vec4 Samples[RESERVOIR_SIZE];
-            uint32_t  NumSamples;
+            glm::vec4 position_emissionLum;
+            glm::vec4 normal;
+            uint32_t  lightIndex;
+            float     pHat;
+            float     sumWeights;
+            float     w;
+        };
+
+        struct alignas(16) Reservoir
+        {
+            LightSample Samples[RESERVOIR_SIZE];
+            uint32_t    NumSamples;
         };
 
         struct PushConstantRestir

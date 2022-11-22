@@ -53,7 +53,7 @@ namespace foray {
 
         VkExtent2D   windowSize    = mContext->GetSwapchainSize();
         VkDeviceSize reservoirSize = sizeof(Reservoir);
-        VkDeviceSize bufferSize    = windowSize.width * windowSize.height * reservoirSize * restirConfig.ReservoirSize;
+        VkDeviceSize bufferSize    = windowSize.width * windowSize.height * reservoirSize;
         for(size_t i = 0; i < mReservoirBuffers.size(); i++)
         {
             if(mReservoirBuffers[i].Exists())
@@ -61,7 +61,7 @@ namespace foray {
                 mReservoirBuffers[i].Destroy();
             }
 
-            mReservoirBuffers[i].Create(mContext, VkBufferUsageFlagBits::VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, bufferSize, VMA_MEMORY_USAGE_AUTO_PREFER_HOST, 0,
+            mReservoirBuffers[i].Create(mContext, VkBufferUsageFlagBits::VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, bufferSize, VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE, 0,
                                         std::string("RestirStorageBuffer#") + std::to_string(i));
         }
     }
@@ -161,6 +161,8 @@ namespace foray {
 
     void RestirStage::Resize(const VkExtent2D& extent)
     {
+        RestirConfiguration& restirConfig = mRestirConfigurationUbo.GetData();
+        restirConfig.ScreenSize           = glm::uvec2(extent.width, extent.height);
         DestroyOutputImages();
         CreateOutputImages();
         CreateOrUpdateDescriptors();

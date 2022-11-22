@@ -5,6 +5,8 @@
 #extension GL_EXT_ray_tracing : enable // Raytracing
 #extension GL_EXT_debug_printf : enable
 
+
+// fix resize
 // Include structs and bindings
 #ifndef includes
 #define includes
@@ -14,6 +16,7 @@
 #include "../../foray/src/shaders/rt_common/imageoutput.glsl"
 #include "../../foray/src/shaders/common/lcrng.glsl"
 #include "../../foray/src/shaders/common/noisetex.glsl"
+#include "../../foray/src/shaders/shading/constants.glsl"
 #endif
 
 layout(push_constant) uniform TracerConfigBlock
@@ -103,7 +106,7 @@ bool testVisibility(vec3 p1, vec3 p2) {
 
 	traceRayEXT(
 		MainTlas,            // acceleration structure
-		gl_RayFlagsTerminateOnFirstHitEXT | gl_RayFlagsOpaqueEXT | gl_RayFlagsSkipClosestHitShaderEXT,       // rayFlags
+		gl_RayFlagsTerminateOnFirstHitEXT | gl_RayFlagsSkipClosestHitShaderEXT,       // rayFlags
 		0xFF,           // cullMask
 		0,              // sbtRecordOffset
 		0,              // sbtRecordStride
@@ -202,16 +205,16 @@ void main()
 	}
 
 
-	 //check if the 4 selected samples are have visibility to surface point
+	 // check if the RESERVOIR_SIZE selected samples are have visibility to surface point
 		for (int i = 0; i < RESERVOIR_SIZE; i++) {
 			bool shadowed = testVisibility(gbuf_pos, res.samples[i].position_emissionLum.xyz);
 			//shadowed = testVisibility(worldPos, lightSamplePos2);
 			//debugPrintfEXT(" shadowed = %d \n", shadowed);
-			if (shadowed) {
+			if (shadowed) { 
 				res.samples[i].w = 0.0f;
 				res.samples[i].sumWeights = 0.0f;
 			}
-		}
+		} 
 
 	// =========================================================================================
 	// use motion buffer for reprojection of the pixels
@@ -255,6 +258,8 @@ void main()
 
 	// =========================================================================================
 	// TEMPORAL REUSE
+	if(true)
+	{
 	bool validForTemporalReuse = positionDiffValid && normalDiffValid && albedoDiffValid;
 	if(validForTemporalReuse)
 	{
@@ -263,7 +268,7 @@ void main()
 
 		// clamp the number of samples
 		prevRes.numStreamSamples = min(
-			prevRes.numStreamSamples, 200
+			prevRes.numStreamSamples, 1000
 		);
 
 		//vec2 metallicRoughness = texelFetch(uniMaterialProperties, ivec2(pixelCoord), 0).xy;
@@ -280,6 +285,82 @@ void main()
 		}
 
 		combineReservoirs(res, prevRes, pHat, randomSeed, activatePrintf);
+	}
+	}
+	
+
+	// =========================================================================================
+	// SPATIAL REUSE
+	if(true)
+	{
+		uint numNeighbours = RestirConfig.SpatialNeighbors;
+		numNeighbours = 1;
+		for(int i = 0; i < numNeighbours; i++)
+		{
+			ivec2 randNeighbor = ivec2(0, 0);
+		
+			float angle = lcgFloat(randomSeed) * 2.0 * PI;
+			float spatialRadius = RestirConfig.SpatialRadius;
+			spatialRadius = 2.0f;
+			float radius = sqrt(lcgFloat(randomSeed)) * spatialRadius;
+
+			ivec2 randNeighborOffset = ivec2(round(cos(angle) * radius), round(sin(angle) * radius));
+
+			randNeighbor.x = randNeighborOffset.x + int(oldCoords.x);
+			randNeighbor.y = randNeighborOffset.y + int(oldCoords.y);
+
+			if(randNeighbor.x < 0 || randNeighbor.x > int(RestirConfig.ScreenSize.x) - 1 ||
+				randNeighbor.y < 0 || randNeighbor.y > int(RestirConfig.ScreenSize.y) - 1 )
+			{ 
+				continue;
+			}
+			
+//			ivec2 randNeighborOffset = ivec2(floor(cos(angle) * radius), floor(sin(angle) * radius));
+//			randNeighbor.x = clamp(int(oldCoords.x) + randNeighborOffset.x, 0, int(RestirConfig.ScreenSize.x) - 1);
+//			randNeighbor.y = clamp(int(oldCoords.y) + randNeighborOffset.y, 0, int(RestirConfig.ScreenSize.y) - 1);
+
+			uint randIndex = randNeighbor.y * RestirConfig.ScreenSize.x + randNeighbor.x;
+			if(activatePrintf)
+			{
+				debugPrintfEXT("reservoir random index %d, radius %f, angle %f, \n", randIndex, radius, angle);
+			}
+
+			// Discard over biased neighbors
+			vec3 neighborPos = texelFetch(PreviousFrameImages[PREVIOUSFRAME_POS], ivec2(randNeighbor), 0).xyz;
+			vec3 neighborNor = texelFetch(PreviousFrameImages[PREVIOUSFRAME_NORMAL], ivec2(randNeighbor), 0).xyz;
+
+			vec3 posDiff = neighborPos - gbuf_pos;
+			float spatialThreshold = RestirConfig.SpatialPosThreshold;
+			spatialThreshold = 0.1;
+			float posDiffMaxSquared = spatialThreshold * spatialThreshold;
+
+			float spatialNormalThreshold = RestirConfig.SpatialNormalThreshold;
+			spatialNormalThreshold = 20.0f;
+			if (
+				dot(posDiff, posDiff) > posDiffMaxSquared ||
+				dot(neighborNor, gbuf_normal) < cos(radians(spatialNormalThreshold))
+			) {
+				continue;
+			}
+
+			Reservoir randRes = prevFrameReservoirs.prevFrameReservoirs[randIndex];
+
+//			randRes.numStreamSamples = min(  
+//				randRes.numStreamSamples,  100
+//			);
+
+			float newPHats[RESERVOIR_SIZE];
+			for (int j = 0; j < RESERVOIR_SIZE; ++j) {
+//				float newPHat = evaluatePHat(
+//					worldPos, randRes.samples[j].position_emissionLum.xyz, uniforms.cameraPos.xyz,
+//					normal, randRes.samples[j].normal.xyz, randRes.samples[j].normal.w > 0.5f,
+//					albedoLum, randRes.samples[j].position_emissionLum.w, roughnessMetallic.x, roughnessMetallic.y);
+				newPHats[j] = 1.0f;
+			}
+
+			combineReservoirs(res, randRes, newPHats, randomSeed, activatePrintf);
+		}
+
 	}
 
 	// =========================================================================================
@@ -303,12 +384,8 @@ void main()
 	reservoirs.reservoirs[reservoirIndex] = res;
 
 	//debugPrintfEXT("Brightness pHat %f , number of samples %d \n", res.samples[0].pHat, res.numStreamSamples);
-	vec4 finalColor = vec4(vec3(res.samples[0].pHat), 1.0f);
+	vec4 finalColor = vec4(vec3(res.samples[0].pHat) * gbuf_albedo, 1.0f);
 	imageStore(ImageOutput, ivec2(pixelCoord), vec4(finalColor));
-//	if(inUV.x > 0.5)
-//	{
-//		imageStore(ImageOutput, ivec2(pixelCoord), vec4(!shadowed));
-//	}
 
 	// show tracked pixel
 	if(activatePrintf)

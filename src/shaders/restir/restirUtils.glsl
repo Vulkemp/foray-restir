@@ -3,7 +3,7 @@
 #include "../../../foray/src/shaders/common/lcrng.glsl"
 #endif
 
-#define RESERVOIR_SIZE 1
+#define RESERVOIR_SIZE 4
 
 struct LightSample {
 	vec4 position_emissionLum;

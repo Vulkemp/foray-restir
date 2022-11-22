@@ -8,7 +8,7 @@
 
 #include "structs.hpp"
 
-// #define USE_PRINTF
+//#define USE_PRINTF
 
 std::vector<std::string> g_ShaderPrintfLog;
 
@@ -26,8 +26,6 @@ VkBool32 myDebugCallback(VkDebugReportFlagsEXT      flags,
     printf("debugPrintfEXT: %s", pMessage);
     g_ShaderPrintfLog.push_back(pMessage);
     printf("num %d", (int)g_ShaderPrintfLog.size());
- 
-
     return false;
 }
 
@@ -35,8 +33,9 @@ void RestirProject::ApiBeforeInit()
 {
 #ifdef USE_PRINTF
     mInstance.SetEnableDebugReport(true);
-#else
     mInstance.SetDebugReportFunc(&myDebugCallback);
+#else
+
     mInstance.SetEnableDebugReport(false);
 #endif
 }
@@ -63,24 +62,43 @@ void RestirProject::ApiOnEvent(const foray::osi::Event* event)
 
 void RestirProject::loadScene()
 {
-    std::vector<std::string> scenePaths({
-        "../data/scenes/sponza/glTF/Sponza.gltf",
-        "../data/scenes/cube/cube2.gltf",
+    struct ModelLoad
+    {
+        std::string                        ModelPath;
+        foray::gltf::ModelConverterOptions ModelConverterOptions;
+    };
+
+    // clang-format off
+    //"../data/scenes/sponza/glTF/Sponza.gltf",
+    std::vector<ModelLoad> modelLoads({
+        // Bistro exterior
+        {
+            //.ModelPath = "E:/gltf/BistroExterior_out/BistroExterior.gltf",
+            .ModelPath = "../data/scenes/sponza/glTF/Sponza.gltf",
+            .ModelConverterOptions = {
+                .FlipY = true,
+            },
+        },
+        // Light cube
+        {
+            .ModelPath = "../data/scenes/cube/cube2.gltf",
+        }
     });
+    // clang-format on
 
     mScene = std::make_unique<foray::scene::Scene>(&mContext);
     foray::gltf::ModelConverter converter(mScene.get());
-    for(const auto& path : scenePaths)
+    for(const auto& modelLoad : modelLoads)
     {
-        converter.LoadGltfModel(foray::osi::MakeRelativePath(path));
+        converter.LoadGltfModel(foray::osi::MakeRelativePath(modelLoad.ModelPath), &mContext, modelLoad.ModelConverterOptions);
     }
 
     mScene->UpdateTlasManager();
     mScene->UseDefaultCamera();
 
-    for(int32_t i = 0; i < scenePaths.size(); i++)
+    for(int32_t i = 0; i < modelLoads.size(); i++)
     {
-        const auto& path = scenePaths[i];
+        const auto& path = modelLoads[i].ModelPath;
         const auto& log  = converter.GetBenchmark().GetLogs()[i];
         foray::logger()->info("Model Load \"{}\":\n{}", path, log.PrintPretty());
     }
@@ -105,8 +123,7 @@ void RestirProject::LoadEnvironmentMap()
     }
 
     foray::core::ManagedImage::CreateInfo ci(VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, hdrVkFormat,
-                                             imageLoader.GetInfo().Extent,
-                                             "Environment map");
+                                             imageLoader.GetInfo().Extent, "Environment map");
 
     imageLoader.InitManagedImage(&mContext, &mSphericalEnvMap, ci);
     imageLoader.Destroy();
@@ -146,8 +163,8 @@ void RestirProject::CollectEmissiveTriangles()
     for(foray::scene::Node* node : nodesWithMeshInstances)
     {
         foray::scene::ncomp::MeshInstance* meshInstance = node->GetComponent<foray::scene::ncomp::MeshInstance>();
-        foray::scene::Mesh*         mesh         = meshInstance->GetMesh();
-        auto                        primitives   = mesh->GetPrimitives();
+        foray::scene::Mesh*                mesh         = meshInstance->GetMesh();
+        auto                               primitives   = mesh->GetPrimitives();
         foray::logger()->info("Primitive size: {}", primitives.size());
 
         // our cube scene only has 1 primitve
@@ -160,7 +177,7 @@ void RestirProject::CollectEmissiveTriangles()
 
         // get geometry world transform
         foray::scene::ncomp::Transform* transform    = node->GetTransform();
-        glm::mat4                transformMat = transform->GetGlobalMatrix();
+        glm::mat4                       transformMat = transform->GetGlobalMatrix();
 
         // create triangles from vertices & indices
         mTriangleLights.resize(indices->size() / 3);
@@ -181,13 +198,12 @@ void RestirProject::CollectEmissiveTriangles()
             triLight.materialIndex = materialIndex;
 
             // compute triangle area
-            glm::vec3 normal = vertices->at(indices->at(i)).Normal + vertices->at(indices->at(i + 1)).Normal + vertices->at(indices->at(i + 2)).Normal;
+            glm::vec3 normal            = vertices->at(indices->at(i)).Normal + vertices->at(indices->at(i + 1)).Normal + vertices->at(indices->at(i + 2)).Normal;
             glm::vec3 normal_normalized = glm::normalize(normal);
             triLight.normal             = glm::vec4(normal_normalized.x, normal_normalized.y, normal_normalized.z, normal.length());
-            foray::logger()->debug("TriLightNormal: {},{},{},{}", triLight.normal.x, triLight.normal.y, triLight.normal.z, triLight.normal.w);
+            //foray::logger()->debug("TriLightNormal: {},{},{},{}", triLight.normal.x, triLight.normal.y, triLight.normal.z, triLight.normal.w);
         }
     }
-
 }
 
 void RestirProject::UploadLightsToGpu()
@@ -300,8 +316,8 @@ void RestirProject::ApiRender(foray::base::FrameRenderInfo& renderInfo)
         barrier.NewLayout                   = VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL;
         barrier.SubresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
 
-        renderInfo.GetImageLayoutCache().CmdBarrier(commandBuffer, mGbufferStage.GetImageOutput(foray::stages::GBufferStage::DepthOutputName), barrier, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
-                                                    VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR);
+        renderInfo.GetImageLayoutCache().CmdBarrier(commandBuffer, mGbufferStage.GetImageOutput(foray::stages::GBufferStage::DepthOutputName), barrier,
+                                                    VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR);
     }
 
     mRestirStage.RecordFrame(commandBuffer, renderInfo);
