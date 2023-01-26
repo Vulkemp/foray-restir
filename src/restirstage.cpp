@@ -32,7 +32,6 @@ namespace foray {
         restirConfig.ReservoirSize           = RESERVOIR_SIZE;
         restirConfig.InitialLightSampleCount = 32;  // number of samples to initally sample?
         restirConfig.ScreenSize              = glm::uvec2(mContext->GetSwapchainSize().width, mContext->GetSwapchainSize().height);
-        restirConfig.NumTriLights            = 12;  // TODO: get from collect emissive triangles
     }
 
     void RestirStage::GetGBufferImages()
@@ -166,6 +165,11 @@ namespace foray {
         DestroyOutputImages();
         CreateOutputImages();
         CreateOrUpdateDescriptors();
+    }
+
+    void RestirStage::SetNumberOfTriangleLights(uint32_t numTriangleLights)
+    {
+        mRestirConfigurationUbo.GetData().NumTriLights = numTriangleLights;
     }
 
 #pragma endregion

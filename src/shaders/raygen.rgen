@@ -258,7 +258,7 @@ void main()
 
 	// =========================================================================================
 	// TEMPORAL REUSE
-	if(true)
+	if(false)
 	{
 	bool validForTemporalReuse = positionDiffValid && normalDiffValid && albedoDiffValid;
 	if(validForTemporalReuse)
@@ -291,7 +291,7 @@ void main()
 
 	// =========================================================================================
 	// SPATIAL REUSE
-	if(true)
+	if(false)
 	{
 		uint numNeighbours = RestirConfig.SpatialNeighbors;
 		numNeighbours = 1;

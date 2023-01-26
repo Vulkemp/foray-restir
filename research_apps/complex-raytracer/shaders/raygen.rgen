@@ -1,0 +1,50 @@
+#version 460
+#extension GL_KHR_vulkan_glsl : enable // Vulkan-specific syntax
+#extension GL_GOOGLE_include_directive : enable // Include files
+#extension GL_EXT_ray_tracing : enable // Raytracing
+
+// Include structs and bindings
+
+#include "rt_common/bindpoints.glsl" // Defines constants for the bind indices that RaytracingStage uses
+#include "common/camera.glsl" // Binds camera matrices UBO
+#include "rt_common/tlas.glsl" // Binds Top Level Acceleration Structure
+#include "rt_common/imageoutput.glsl" // Binds the output storage image
+#include "rt_common/tracerconfig.glsl" // Binds the output storage image
+#include "common/xteanoise.glsl"
+
+#define HITPAYLOAD_OUT
+#include "rt_common/payload.glsl" // Bind the payload struct outgoing
+#include "shading/constants.glsl"
+
+void main() 
+{
+	// We calculate the ray vector using the current pixels UV coords and the inverse view and projection matrices
+	const vec2 pixelCenter = vec2(gl_LaunchIDEXT.xy) + vec2(0.5); // offset from the corner of the pixel to the center
+	const vec2 inUV = pixelCenter/vec2(gl_LaunchSizeEXT.xy); // UV coordinate of the current pixel in the framebuffer texture
+	vec2 d = inUV * 2.0 - 1.0; // Correct for depth information
+
+	vec4 origin = Camera.InverseViewMatrix * vec4(0,0,0,1); // Ray origin in world space
+	vec4 direction = Camera.InverseViewMatrix * Camera.InverseProjectionMatrix * vec4(d.x, d.y, 1, 1); // Target direction in world space
+
+	ChildPayload = ConstructHitPayload();
+	ChildPayload.Seed = CalculateSeedXTEA(ivec2(gl_LaunchIDEXT.xy), TracerConfig.RngSeed);
+
+	// Trace the ray
+	//    The hitpayload (see payload.glsl) is both the input variable and return value of the hit / miss shaders
+
+    traceRayEXT(MainTlas, // Top Level Acceleration Structure
+		0, // RayFlags (Possible use: skip AnyHit, ClosestHit shaders etc.)
+		0xff, // Culling Mask (Possible use: Skip intersection which don't have a specific bit set)
+		0, // SBT record offset
+		0, // SBT record stride
+		0, // Miss Index
+		origin.xyz, // Ray origin in world space
+		0.001, // Minimum ray travel distance
+		direction.xyz, // Ray direction in world space
+		INFINITY, // Maximum ray travel distance
+		0 // Payload index (outgoing payload bound to location 0 in payload.glsl)
+	);
+
+	// Store the pixel
+	imageStore(ImageOutput, ivec2(gl_LaunchIDEXT.xy), vec4(ChildPayload.Radiance, 1.0));
+}

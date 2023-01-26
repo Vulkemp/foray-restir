@@ -5,6 +5,7 @@
 
 #include <scene/components/foray_node_components.hpp>
 #include <scene/foray_mesh.hpp>
+#include <scene/globalcomponents/foray_materialmanager.hpp>
 
 #include "structs.hpp"
 
@@ -73,16 +74,16 @@ void RestirProject::loadScene()
     std::vector<ModelLoad> modelLoads({
         // Bistro exterior
         {
-            //.ModelPath = "E:/gltf/BistroExterior_out/BistroExterior.gltf",
-            .ModelPath = "../data/scenes/sponza/glTF/Sponza.gltf",
+            .ModelPath = "E:/gltf/BistroExterior_out/BistroExterior.gltf",
+            //.ModelPath = "../data/scenes/sponza/glTF/Sponza.gltf",
             .ModelConverterOptions = {
-                .FlipY = true,
+                .FlipY = false,
             },
         },
         // Light cube
-        {
+       /* {
             .ModelPath = "../data/scenes/cube/cube2.gltf",
-        }
+        }*/
     });
     // clang-format on
 
@@ -94,7 +95,7 @@ void RestirProject::loadScene()
     }
 
     mScene->UpdateTlasManager();
-    mScene->UseDefaultCamera();
+    mScene->UseDefaultCamera(true);
 
     for(int32_t i = 0; i < modelLoads.size(); i++)
     {
@@ -159,7 +160,11 @@ void RestirProject::CollectEmissiveTriangles()
     mScene->FindNodesWithComponent<foray::scene::ncomp::MeshInstance>(nodesWithMeshInstances);
     std::vector<foray::scene::Vertex>* vertices;
     std::vector<uint32_t>*             indices;
-    uint32_t                           materialIndex;
+    int32_t                            materialIndex;
+
+    foray::scene::gcomp::MaterialManager* materialManager = mScene->GetComponent<foray::scene::gcomp::MaterialManager>();
+    std::vector<foray::scene::Material>&  materials       = materialManager->GetVector();
+
     for(foray::scene::Node* node : nodesWithMeshInstances)
     {
         foray::scene::ncomp::MeshInstance* meshInstance = node->GetComponent<foray::scene::ncomp::MeshInstance>();
@@ -167,41 +172,60 @@ void RestirProject::CollectEmissiveTriangles()
         auto                               primitives   = mesh->GetPrimitives();
         foray::logger()->info("Primitive size: {}", primitives.size());
 
-        // our cube scene only has 1 primitve
-        if(primitives.size() > 1)
-            continue;
-
-        vertices      = &(primitives[0].Vertices);
-        indices       = &(primitives[0].Indices);
-        materialIndex = primitives[0].MaterialIndex;
-
-        // get geometry world transform
-        foray::scene::ncomp::Transform* transform    = node->GetTransform();
-        glm::mat4                       transformMat = transform->GetGlobalMatrix();
-
-        // create triangles from vertices & indices
-        mTriangleLights.resize(indices->size() / 3);
-        for(size_t i = 0; i < indices->size(); i += 3)
+        for(auto& primitve : primitives)
         {
-            // collect vertices
-            glm::vec3 p1_vec3 = vertices->at(indices->at(i)).Pos;
-            glm::vec3 p2_vec3 = vertices->at(indices->at(i + 1)).Pos;
-            glm::vec3 p3_vec3 = vertices->at(indices->at(i + 2)).Pos;
 
-            // TODO: world matrix of primitive has to be considered for triangle position.
-            shader::TriLight& triLight = mTriangleLights[i / 3];
-            triLight.p1                = transformMat * glm::vec4(p1_vec3, 1.0);
-            triLight.p2                = transformMat * glm::vec4(p2_vec3, 1.0);
-            triLight.p3                = transformMat * glm::vec4(p3_vec3, 1.0);
+            materialIndex = primitve.MaterialIndex;
+            if(materialIndex < 0)
+            {
+                // negative material index indicates fallback material
+                continue;
+            }
 
-            // material index for shader lookup
-            triLight.materialIndex = materialIndex;
+            foray::scene::Material& material = materials[materialIndex];
 
-            // compute triangle area
-            glm::vec3 normal            = vertices->at(indices->at(i)).Normal + vertices->at(indices->at(i + 1)).Normal + vertices->at(indices->at(i + 2)).Normal;
-            glm::vec3 normal_normalized = glm::normalize(normal);
-            triLight.normal             = glm::vec4(normal_normalized.x, normal_normalized.y, normal_normalized.z, normal.length());
-            //foray::logger()->debug("TriLightNormal: {},{},{},{}", triLight.normal.x, triLight.normal.y, triLight.normal.z, triLight.normal.w);
+            // if all components of emissive factor are 0, we skip primitive
+            if(glm::all(glm::equal(material.EmissiveFactor, glm::vec3(0))))
+            {
+                foray::logger()->info("Discarded because emissive factor was 0");
+                continue;
+            }
+
+            vertices = &(primitve.Vertices);
+            indices  = &(primitve.Indices);
+
+            foray::logger()->info("Chosen geometry with {} indices.", indices->size());
+
+            // get geometry world transform
+            foray::scene::ncomp::Transform* transform    = node->GetTransform();
+            glm::mat4                       transformMat = transform->GetGlobalMatrix();
+
+            // create triangles from vertices & indices
+            uint32_t baseCount = mTriangleLights.size();
+            uint32_t numTriangles = (indices->size() / 3);
+            mTriangleLights.resize(baseCount + numTriangles);
+            for(size_t i = 0; i < indices->size(); i += 3)
+            {
+                // collect vertices
+                glm::vec3 p1_vec3 = vertices->at(indices->at(i)).Pos;
+                glm::vec3 p2_vec3 = vertices->at(indices->at(i + 1)).Pos;
+                glm::vec3 p3_vec3 = vertices->at(indices->at(i + 2)).Pos;
+
+                // TODO: world matrix of primitive has to be considered for triangle position.
+                shader::TriLight& triLight = mTriangleLights[baseCount + (i / 3)];
+                triLight.p1                = transformMat * glm::vec4(p1_vec3, 1.0);
+                triLight.p2                = transformMat * glm::vec4(p2_vec3, 1.0);
+                triLight.p3                = transformMat * glm::vec4(p3_vec3, 1.0);
+
+                // material index for shader lookup
+                triLight.materialIndex = materialIndex;
+
+                // compute triangle area
+                glm::vec3 normal            = vertices->at(indices->at(i)).Normal + vertices->at(indices->at(i + 1)).Normal + vertices->at(indices->at(i + 2)).Normal;
+                glm::vec3 normal_normalized = glm::normalize(normal);
+                triLight.normal             = glm::vec4(normal_normalized.x, normal_normalized.y, normal_normalized.z, normal.length());
+                //foray::logger()->debug("TriLightNormal: {},{},{},{}", triLight.normal.x, triLight.normal.y, triLight.normal.z, triLight.normal.w);
+            }
         }
     }
 }
@@ -285,13 +309,15 @@ void RestirProject::ConfigureStages()
 {
     mGbufferStage.Init(&mContext, mScene.get());
     mRestirStage.Init(&mContext, mScene.get(), &mSphericalEnvMapSampler, &mNoiseSource.GetImage(), &mGbufferStage, this);
+    mRestirStage.SetNumberOfTriangleLights(mTriangleLights.size());
     UpdateOutputs();
 
-    mImguiStage.Init(&mContext, mOutputs[mCurrentOutput]);
+    mImguiStage.InitForSwapchain(&mContext);
     PrepareImguiWindow();
 
     // Init copy stage
     mImageToSwapchainStage.Init(&mContext, mOutputs[mCurrentOutput]);
+    mImageToSwapchainStage.SetFlipY(true);
 }
 
 void RestirProject::ApiRender(foray::base::FrameRenderInfo& renderInfo)
@@ -322,11 +348,11 @@ void RestirProject::ApiRender(foray::base::FrameRenderInfo& renderInfo)
 
     mRestirStage.RecordFrame(commandBuffer, renderInfo);
 
-    // draw imgui windows
-    mImguiStage.RecordFrame(commandBuffer, renderInfo);
-
     // copy final image to swapchain
     mImageToSwapchainStage.RecordFrame(commandBuffer, renderInfo);
+
+    // draw imgui windows
+    mImguiStage.RecordFrame(commandBuffer, renderInfo);
 
     renderInfo.GetInFlightFrame()->PrepareSwapchainImageForPresent(commandBuffer, renderInfo.GetImageLayoutCache());
     commandBuffer.Submit();
@@ -372,6 +398,5 @@ void RestirProject::ApplyOutput()
 {
     vkDeviceWaitIdle(mContext.Device());
     auto output = mOutputs[mCurrentOutput];
-    mImguiStage.SetBackgroundImage(output);
     mImageToSwapchainStage.SetSrcImage(output);
 }

@@ -1,0 +1,67 @@
+#version 460
+#extension GL_KHR_vulkan_glsl : enable // Vulkan-specific syntax
+#extension GL_GOOGLE_include_directive : enable // Include files
+#extension GL_EXT_ray_tracing : enable // Raytracing
+#extension GL_EXT_nonuniform_qualifier : enable // Required for asserting that some array indexing is done with non-uniform indices
+
+// Include structs and bindings
+
+#include "rt_common/bindpoints.glsl" // Bindpoints (= descriptor set layout)
+#include "rt_common/tlas.glsl"
+#include "common/materialbuffer.glsl" // Material buffer for material information and texture array
+#include "rt_common/geometrymetabuffer.glsl" // GeometryMeta information
+#include "rt_common/geobuffers.glsl" // Vertex and index buffer aswell as accessor methods
+#include "common/normaltbn.glsl" // Normal calculation in tangent space
+
+
+#define VISIPAYLOAD_IN
+#include "payload.glsl"
+
+
+hitAttributeEXT vec2 attribs; // Barycentric coordinates
+
+void main()
+{
+	// Get geometry meta info
+	GeometryMeta geometa = GetGeometryMeta(uint(gl_InstanceCustomIndexEXT), uint(gl_GeometryIndexEXT));
+
+	// get material 
+	MaterialBufferObject material = GetMaterialOrFallback(geometa.MaterialIndex);
+
+	if (material.TransmissionFactor > 0.f)
+	{
+		ignoreIntersectionEXT;
+	}
+	if ((material.Flags & MATERIALFLAGBIT_FULLYOPAQUE) > 0 && material.TransmissionTextureIndex < 0)
+	{
+		return;
+	}
+
+	// Calculate barycentric coords from hitAttribute values
+	const vec3 barycentricCoords = vec3(1.0f - attribs.x - attribs.y, attribs.x, attribs.y);
+	
+	// get primitive indices
+	const uvec3 indices = GetIndices(geometa, uint(gl_PrimitiveID));
+
+	// get primitive vertices
+	Vertex v0, v1, v2;
+	GetVertices(indices, v0, v1, v2);
+
+	// calculate uv
+    const vec2 uv = v0.Uv * barycentricCoords.x + v1.Uv * barycentricCoords.y + v2.Uv * barycentricCoords.z;
+
+	bool isOpaque = ProbeAlphaOpacity(material, uv);
+
+    if (!isOpaque)
+    {
+        ignoreIntersectionEXT;
+    }
+
+	if (material.TransmissionTextureIndex >= 0){
+		float transmissionFactor = SampleTexture(material.TransmissionTextureIndex, uv).r;
+		if (transmissionFactor > 0)
+		{
+			ignoreIntersectionEXT;
+		}
+	}
+}

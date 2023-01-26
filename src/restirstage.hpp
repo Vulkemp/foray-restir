@@ -71,6 +71,8 @@ namespace foray {
             void Destroy();
         };
 
+        void SetNumberOfTriangleLights(uint32_t numTriangleLights);
+
       protected:
         RestirProject* mRestirApp{};
 
