@@ -42,7 +42,7 @@ class RestirProject : public foray::base::DefaultAppBase
     virtual void ApiRender(foray::base::FrameRenderInfo& renderInfo) override;
     virtual void ApiOnResized(VkExtent2D size) override;
     virtual void ApiDestroy() override;
-    virtual void ApiOnShadersRecompiled() override;
+    virtual void ApiOnShadersRecompiled(std::unordered_set<uint64_t>& recompiledShaderKeys) override;
 
 
     void PrepareImguiWindow();

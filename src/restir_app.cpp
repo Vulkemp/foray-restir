@@ -252,10 +252,10 @@ void RestirProject::ApiDestroy()
     mTriangleLightsBuffer.Destroy();
 }
 
-void RestirProject::ApiOnShadersRecompiled()
+void RestirProject::ApiOnShadersRecompiled(std::unordered_set<uint64_t>& recompiledShaderKeys)
 {
-    mGbufferStage.OnShadersRecompiled();
-    mRestirStage.OnShadersRecompiled();
+    //mGbufferStage.OnShadersRecompiled(recompiledShaderKeys);
+    //mRestirStage.OnShadersRecompiled(recompiledShaderKeys);
 }
 
 void RestirProject::PrepareImguiWindow()
@@ -318,6 +318,11 @@ void RestirProject::ConfigureStages()
     // Init copy stage
     mImageToSwapchainStage.Init(&mContext, mOutputs[mCurrentOutput]);
     mImageToSwapchainStage.SetFlipY(true);
+
+	RegisterRenderStage(&mGbufferStage);
+    RegisterRenderStage(&mRestirStage);
+    RegisterRenderStage(&mImguiStage);
+    RegisterRenderStage(&mImageToSwapchainStage);
 }
 
 void RestirProject::ApiRender(foray::base::FrameRenderInfo& renderInfo)
@@ -328,7 +333,7 @@ void RestirProject::ApiRender(foray::base::FrameRenderInfo& renderInfo)
         mOutputChanged = false;
     }
 
-    foray::core::DeviceCommandBuffer& commandBuffer = renderInfo.GetPrimaryCommandBuffer();
+    foray::core::DeviceSyncCommandBuffer& commandBuffer = renderInfo.GetPrimaryCommandBuffer();
     commandBuffer.Begin();
 
     mScene->Update(renderInfo, commandBuffer);
@@ -379,7 +384,7 @@ void RestirProject::UpdateOutputs()
     lUpdateOutput(mOutputs, mGbufferStage, foray::stages::GBufferStage::AlbedoOutputName);
     lUpdateOutput(mOutputs, mGbufferStage, foray::stages::GBufferStage::PositionOutputName);
     lUpdateOutput(mOutputs, mGbufferStage, foray::stages::GBufferStage::NormalOutputName);
-    lUpdateOutput(mOutputs, mRestirStage, foray::stages::ExtRaytracingStage::OutputName);
+    lUpdateOutput(mOutputs, mRestirStage, foray::stages::DefaultRaytracingStageBase::OutputName);
 
     if(mCurrentOutput.size() == 0 || !mOutputs.contains(mCurrentOutput))
     {

@@ -8,6 +8,8 @@
 #include <as/foray_geometrymetabuffer.hpp>
 #include <as/foray_tlas.hpp>
 
+#define RTSTAGEFLAGS VkShaderStageFlagBits::VK_SHADER_STAGE_RAYGEN_BIT_KHR | VkShaderStageFlagBits::VK_SHADER_STAGE_MISS_BIT_KHR | VkShaderStageFlagBits::VK_SHADER_STAGE_ANY_HIT_BIT_KHR
+
 namespace foray {
 #pragma region Init
     void RestirStage::Init(foray::core::Context*              context,
@@ -20,11 +22,11 @@ namespace foray {
         mRestirApp    = restirApp;
         mGBufferStage = gbufferStage;
         GetGBufferImages();
-        stages::ExtRaytracingStage::Init(context, scene, envmap, noiseSource);
+        stages::DefaultRaytracingStageBase::Init(context, scene, envmap, noiseSource);
         mRngSeedPushCOffset = ~0U;
     }
 
-    void RestirStage::CustomObjectsCreate()
+    void RestirStage::ApiCustomObjectsCreate()
     {
         mRestirConfigurationUbo.Create(mContext, "RestirConfigurationUbo");
 
@@ -42,7 +44,7 @@ namespace foray {
 
     void RestirStage::CreateOutputImages()
     {
-        foray::stages::ExtRaytracingStage::CreateOutputImages();
+        foray::stages::DefaultRaytracingStageBase::CreateOutputImages();
 
         mHistoryImages[PreviousFrame::Albedo].Create(mContext, mGBufferImages[UsedGBufferImages::GBUFFER_ALBEDO]);
         mHistoryImages[PreviousFrame::Normal].Create(mContext, mGBufferImages[UsedGBufferImages::GBUFFER_NORMAL]);
@@ -65,21 +67,24 @@ namespace foray {
         }
     }
 
-    void RestirStage::CreateRtPipeline()
+    void RestirStage::ApiCreateRtPipeline()
     {
         // default shaders
-        mRaygen.Create(mContext);
-        mDefault_AnyHit.Create(mContext);
-        mRtShader_VisibilityTestHit.Create(mContext);
-        mRtShader_VisibilityTestMiss.Create(mContext);
+		foray::core::ShaderCompilerConfig options{.IncludeDirs = {FORAY_SHADER_DIR}};
+
+        mShaderKeys.push_back(mRaygen.CompileFromSource(mContext, RAYGEN_FILE, options));
+        mShaderKeys.push_back(mAnyHit.CompileFromSource(mContext, ANYHIT_FILE, options));
+        mShaderKeys.push_back(mVisiMiss.CompileFromSource(mContext, VISI_MISS_FILE, options));
+        mShaderKeys.push_back(mVisiAnyHit.CompileFromSource(mContext, VISI_ANYHIT_FILE, options));
 
         // visibility test
-        mPipeline.GetRaygenSbt().SetGroup(0, &(mRaygen.Module));
-        mPipeline.GetMissSbt().SetGroup(0, &(mRtShader_VisibilityTestMiss.Module));
-        mPipeline.GetHitSbt().SetGroup(0, &(mRtShader_VisibilityTestHit.Module), &(mDefault_AnyHit.Module), nullptr);
+        mPipeline.GetRaygenSbt().SetGroup(0, &mRaygen);
+        mPipeline.GetMissSbt().SetGroup(0, &mVisiMiss);
+        mPipeline.GetHitSbt().SetGroup(0, &mVisiAnyHit, &mAnyHit, nullptr);
+
         mPipeline.Build(mContext, mPipelineLayout);
 
-        mShaderSourcePaths.insert(mShaderSourcePaths.begin(), {mRaygen.Path, mDefault_AnyHit.Path, mRtShader_VisibilityTestHit.Path, mRtShader_VisibilityTestHit.Path});
+        //mShaderSourcePaths.insert(mShaderSourcePaths.begin(), {mRaygen.Path, mDefault_AnyHit.Path, mRtShader_VisibilityTestHit.Path, mRtShader_VisibilityTestHit.Path});
     }
 
     void RestirStage::CreatePipelineLayout()
@@ -155,7 +160,7 @@ namespace foray {
         // create base descriptor sets
         mDescriptorSet.SetDescriptorAt(11, &mRestirConfigurationUbo.GetUboBuffer().GetDeviceBuffer(), VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_RAYGEN_BIT_KHR);
         mDescriptorSet.SetDescriptorAt(16, mRestirApp->mTriangleLightsBuffer, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_RAYGEN_BIT_KHR);
-        ExtRaytracingStage::CreateOrUpdateDescriptors();
+        stages::DefaultRaytracingStageBase::CreateOrUpdateDescriptors();
     }
 
     void RestirStage::Resize(const VkExtent2D& extent)
@@ -219,7 +224,7 @@ namespace foray {
         mRestirConfigurationUbo.CmdCopyToDevice(frameNumber, commandBuffer);
         mRestirConfigurationUbo.CmdPrepareForRead(commandBuffer, VK_PIPELINE_STAGE_2_RAY_TRACING_SHADER_BIT_KHR, VK_ACCESS_SHADER_READ_BIT);
 
-        ExtRaytracingStage::RecordFramePrepare(commandBuffer, renderInfo);
+        DefaultRaytracingStageBase::RecordFramePrepare(commandBuffer, renderInfo);
     }
 
     void RestirStage::RecordFrameBind(VkCommandBuffer commandBuffer, base::FrameRenderInfo& renderInfo)
@@ -241,7 +246,7 @@ namespace foray {
 
         vkCmdPushConstants(commandBuffer, mPipelineLayout, RTSTAGEFLAGS, 0U, sizeof(mPushConstantRestir), &mPushConstantRestir);
 
-        stages::ExtRaytracingStage::RecordFrameTraceRays(commandBuffer, renderInfo);
+        stages::DefaultRaytracingStageBase::RecordFrameTraceRays(commandBuffer, renderInfo);
 
         // copy gbuffer to prev frame
 
@@ -258,18 +263,18 @@ namespace foray {
 #pragma endregion
 #pragma region Destroy
 
-    void RestirStage::DestroyRtPipeline()
+    void RestirStage::ApiDestroyRtPipeline()
     {
         mPipeline.Destroy();
         mRaygen.Destroy();
-        mDefault_AnyHit.Destroy();
-        mRtShader_VisibilityTestHit.Destroy();
-        mRtShader_VisibilityTestMiss.Destroy();
+		mAnyHit.Destroy();
+		mVisiAnyHit.Destroy();
+		mVisiMiss.Destroy();
     }
 
     void RestirStage::DestroyDescriptors()
     {
-        stages::ExtRaytracingStage::DestroyDescriptors();
+        stages::DefaultRaytracingStageBase::DestroyDescriptors();
         mDescriptorSetsReservoirSwap[0].Destroy();
         mDescriptorSetsReservoirSwap[1].Destroy();
 
@@ -297,24 +302,11 @@ namespace foray {
         }
     }
 
-    void RestirStage::CustomObjectsDestroy()
+    void RestirStage::ApiCustomObjectsDestroy()
     {
         mRestirConfigurationUbo.Destroy();
     }
 
-
-#pragma endregion
-#pragma region RtStageShader
-
-    void RestirStage::RtStageShader::Create(foray::core::Context* context)
-    {
-        Module.LoadFromSource(context, Path);
-    }
-
-    void RestirStage::RtStageShader::Destroy()
-    {
-        Module.Destroy();
-    }
 
 #pragma endregion
 }  // namespace foray

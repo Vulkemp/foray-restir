@@ -10,7 +10,7 @@ class RestirProject;
 #define RESERVOIR_SIZE 4
 
 namespace foray {
-    class RestirStage : public foray::stages::ExtRaytracingStage
+    class RestirStage : public foray::stages::DefaultRaytracingStageBase
     {
       protected:
         struct RestirConfiguration
@@ -62,15 +62,6 @@ namespace foray {
 
         virtual void Resize(const VkExtent2D& extent) override;
 
-        struct RtStageShader
-        {
-            std::string               Path = "";
-            foray::core::ShaderModule Module;
-
-            void Create(foray::core::Context* context);
-            void Destroy();
-        };
-
         void SetNumberOfTriangleLights(uint32_t numTriangleLights);
 
       protected:
@@ -79,14 +70,14 @@ namespace foray {
         virtual void CreateOutputImages() override;
         virtual void DestroyOutputImages() override;
 
-        virtual void CreateRtPipeline() override;
-        virtual void DestroyRtPipeline() override;
+        virtual void ApiCreateRtPipeline() override;
+        virtual void ApiDestroyRtPipeline() override;
 
         virtual void CreateOrUpdateDescriptors() override;
         virtual void DestroyDescriptors() override;
 
-        virtual void CustomObjectsCreate() override;
-        virtual void CustomObjectsDestroy() override;
+        virtual void ApiCustomObjectsCreate() override;
+        virtual void ApiCustomObjectsDestroy() override;
 
         virtual void CreatePipelineLayout() override;
 
@@ -108,12 +99,17 @@ namespace foray {
         std::array<core::ManagedImage*, 4>        mGBufferImages;
         std::array<core::CombinedImageSampler, 4> mGBufferImagesSampled;
 
+		static inline const std::string RAYGEN_FILE = "shaders/raygen.rgen";
+        static inline const std::string ANYHIT_FILE  = "shaders/ray-default/anyhit.rahit";
 
-        RtStageShader mRaygen{"shaders/raygen.rgen"};
-        RtStageShader mDefault_AnyHit{"shaders/ray-default/anyhit.rahit"};
+        static inline const std::string VISI_MISS_FILE   = "shaders/restir/hwVisibilityTest.rmiss";
+        static inline const std::string VISI_ANYHIT_FILE = "shaders/restir/hwVisibilityTest.rchit";
 
-        RtStageShader mRtShader_VisibilityTestMiss{"shaders/restir/hwVisibilityTest.rmiss"};
-        RtStageShader mRtShader_VisibilityTestHit{"shaders/restir/hwVisibilityTest.rchit"};
+		foray::core::ShaderModule mRaygen;
+        foray::core::ShaderModule mAnyHit;
+
+        foray::core::ShaderModule mVisiMiss;
+        foray::core::ShaderModule mVisiAnyHit;
 
         // previous frame infos
         enum PreviousFrame
