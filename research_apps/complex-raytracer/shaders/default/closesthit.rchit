@@ -197,8 +197,72 @@ vec3 CollectIndirectLight(in vec3 pos, in vec3 normal, in MaterialBufferObject m
     }
 }
 
+
+// unifrom picking
+vec3 hemiSpherePoint(vec3 normal, uint seed)
+{
+    float theta = 2.0 * PI * lcgFloat(seed);
+    float cosPhi = lcgFloat(seed);
+    float phi = acos(cosPhi);
+    
+    vec3 zAxis = normal;
+    vec3 xAxis = normalize(cross(normal, vec3(1.0, 0.0, 0.0)));
+    vec3 yAxis = normalize(cross(normal, xAxis));
+    
+    vec3 x = cos(theta) * xAxis;
+    vec3 y = sin(theta) * yAxis;
+    vec3 horizontal = normalize(x + y);
+    vec3 z = cosPhi * zAxis;
+    vec3 p = horizontal * sin(phi) + z;
+    
+    return normalize(p);
+}
+
+vec3 CollectIndirectLightRandomHemiSphere(in vec3 pos, in vec3 normal, in MaterialBufferObject material, in MaterialProbe probe)
+{
+
+	uint seed = ReturnPayload.Seed;
+	vec3 raydir = hemiSpherePoint(normal, seed);
+
+	float ndotl = dot(raydir, normal);
+	vec3 origin = pos;
+    CorrectOrigin(origin, normal, ndotl);
+
+	ConstructHitPayload();
+    ChildPayload.Seed = ReturnPayload.Seed + 1;
+    //ChildPayload.Attenuation = EvaluateMaterial(hit, material, probe);
+    ChildPayload.Depth = ReturnPayload.Depth + 1;
+
+	traceRayEXT(MainTlas, // Top Level Acceleration Structure
+                0, // RayFlags (Possible use: skip AnyHit, ClosestHit shaders etc.)
+                0xff, // Culling Mask (Possible use: Skip intersection which don't have a specific bit set)
+                0, // SBT record offset
+                0, // SBT record stride
+                0, // Miss Index
+                origin, // Ray origin in world space
+                0.001, // Minimum ray travel distance
+                raydir, // Ray direction in world space
+                INFINITY, // Maximum ray travel distance
+                0 // Payload index (outgoing payload bound to location 0 in payload.glsl)
+            );
+
+
+	return ChildPayload.Radiance;
+
+}
+
 void main()
 {
+	
+	// this serves as a base to implement
+	// - random monte carlo sampling
+	// - importance sampling after the hemisphere
+	// - importance sampling after the brdf
+	// - importance sampling the lights
+
+	// we need to
+	// - generate a random variable
+	
     // The closesthit shader is invoked with hit information on the geometry intersect closest to the ray origin
     
     // STEP #1 Get meta information on the intersected geometry (material) and the vertex information
@@ -242,11 +306,13 @@ void main()
 
     vec3 directLight = CollectDirectLight(posWorldSpace, normalWorldSpace, material, probe);
     vec3 indirectLight = vec3(0);
-
-    if (ReturnPayload.Depth < 5)
+	 
+    if (ReturnPayload.Depth < 1)
     {
-        indirectLight = CollectIndirectLight(posWorldSpace, normalWorldSpace, material, probe);
+        //indirectLight = CollectIndirectLight(posWorldSpace, normalWorldSpace, material, probe);
+        indirectLight = CollectIndirectLightRandomHemiSphere(posWorldSpace, normalWorldSpace, material, probe);
     }
+
     float rayDist = length(posWorldSpace - gl_WorldRayOriginEXT);
     ReturnPayload.Radiance = directLight + indirectLight + probe.EmissiveColor;
     ReturnPayload.Distance = length(posWorldSpace - gl_WorldRayOriginEXT);
