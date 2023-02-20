@@ -197,8 +197,23 @@ vec3 CollectIndirectLight(in vec3 pos, in vec3 normal, in MaterialBufferObject m
     }
 }
 
+vec2 hammersley2d(uint i, uint N) 
+{
+	// Radical inverse based on http://holger.dammertz.org/stuff/notes_HammersleyOnHemisphere.html
+	uint bits = (i << 16u) | (i >> 16u);
+	bits = ((bits & 0x55555555u) << 1u) | ((bits & 0xAAAAAAAAu) >> 1u);
+	bits = ((bits & 0x33333333u) << 2u) | ((bits & 0xCCCCCCCCu) >> 2u);
+	bits = ((bits & 0x0F0F0F0Fu) << 4u) | ((bits & 0xF0F0F0F0u) >> 4u);
+	bits = ((bits & 0x00FF00FFu) << 8u) | ((bits & 0xFF00FF00u) >> 8u);
+	float rdi = float(bits) * 2.3283064365386963e-10;
+	return vec2(float(i) /float(N), rdi);
+}
 
-// unifrom picking
+
+// https://www.shadertoy.com/view/tltfWf Pick Points On Hemisphere
+// https://github.com/SaschaWillems/Vulkan-glTF-PBR/blob/master/data/shaders/genbrdflut.frag
+// https://www.shadertoy.com/view/4lscWj Hammersly Point Set
+// uniform picking
 vec3 hemiSpherePoint(vec3 normal, uint seed)
 {
     float theta = 2.0 * PI * lcgFloat(seed);
@@ -206,7 +221,8 @@ vec3 hemiSpherePoint(vec3 normal, uint seed)
     float phi = acos(cosPhi);
     
     vec3 zAxis = normal;
-    vec3 xAxis = normalize(cross(normal, vec3(1.0, 0.0, 0.0)));
+	
+    vec3 xAxis = normalize(cross(normal, abs(normal.z) < 0.999 ? vec3(0.0, 0.0, 1.0) : vec3(1.0, 0.0, 0.0)));
     vec3 yAxis = normalize(cross(normal, xAxis));
     
     vec3 x = cos(theta) * xAxis;
@@ -245,8 +261,7 @@ vec3 CollectIndirectLightRandomHemiSphere(in vec3 pos, in vec3 normal, in Materi
                 INFINITY, // Maximum ray travel distance
                 0 // Payload index (outgoing payload bound to location 0 in payload.glsl)
             );
-
-
+			 
 	return ChildPayload.Radiance;
 
 }
