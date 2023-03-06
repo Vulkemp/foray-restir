@@ -7,6 +7,11 @@ namespace complex_raytracer {
         foray::stages::DefaultRaytracingStageBase::Init(context, scene);
     }
 
+    void ComplexRaytracingStage::Destroy()
+    {
+        mLights.Destroy();
+    }
+
     void ComplexRaytracingStage::ApiCreateRtPipeline()
     {
         foray::core::ShaderCompilerConfig options{.IncludeDirs = {FORAY_SHADER_DIR}};
@@ -39,17 +44,61 @@ namespace complex_raytracer {
 
     void ComplexRaytracingStage::CreateOrUpdateDescriptors()
     {
+        InitLights();
         const uint32_t bindpoint_lights = 11;
 
-        mDescriptorSet.SetDescriptorAt(bindpoint_lights, mLightManager->GetBuffer().GetVkDescriptorInfo(), VkDescriptorType::VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, foray::stages::RTSTAGEFLAGS);
+        mDescriptorSet.SetDescriptorAt(bindpoint_lights, mLights.GetVkDescriptorBufferInfo(), VkDescriptorType::VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, foray::stages::RTSTAGEFLAGS);
+
 
         foray::stages::DefaultRaytracingStageBase::CreateOrUpdateDescriptors();
     }
 
+    void ComplexRaytracingStage::InitLights()
+    {
+        struct Light
+        {
+            glm::vec4 LightPosAndRadius;
+        };
+
+        // clang-format off
+        Light lights[5] = {
+            glm::vec4(-5.0f, -7.8113f, 6.5781f,  2.0f),
+			glm::vec4(-5.0f, -7.8113f, 2.0045f,  1.55f),
+			glm::vec4(-5.0f, -7.8113f, -1.4012f, 1.2f),
+            glm::vec4(-5.0f, -7.8113f, -4.2897f, 0.9f),
+			glm::vec4(-5.0f, -7.8113f, -6.6926f, 0.6f),
+        };
+        // clang-format on
+
+        mLights.Create(mContext, VkBufferUsageFlagBits::VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VkBufferUsageFlagBits::VK_BUFFER_USAGE_TRANSFER_DST_BIT, sizeof(lights),
+                       VMA_MEMORY_USAGE_AUTO);
+        mLights.WriteDataDeviceLocal(lights, sizeof(lights));
+    }
+
+
+    std::vector<std::string> g_ShaderPrintfLog;
+    VkBool32                 myDebugCallback(VkDebugReportFlagsEXT      flags,
+                                             VkDebugReportObjectTypeEXT objectType,
+                                             uint64_t                   object,
+                                             size_t                     location,
+                                             int32_t                    messageCode,
+                                             const char*                pLayerPrefix,
+                                             const char*                pMessage,
+                                             void*                      pUserData)
+    {
+
+        printf("debugPrintfEXT: %s", pMessage);
+        g_ShaderPrintfLog.push_back(pMessage);
+        printf("num %d", (int)g_ShaderPrintfLog.size());
+        return false;
+    }
+
     void ComplexRaytracerApp::ApiBeforeInit()
     {
-        mInstance.SetEnableDebugReport(false);
+        mInstance.SetEnableDebugReport(true);
+        mInstance.SetDebugReportFunc(&myDebugCallback);
     }
+
     void ComplexRaytracerApp::ApiInit()
     {
         mWindowSwapchain.GetWindow().DisplayMode(foray::osi::EDisplayMode::WindowedResizable);
@@ -106,4 +155,5 @@ namespace complex_raytracer {
         mSwapCopyStage.Destroy();
         mScene = nullptr;
     }
+
 }  // namespace complex_raytracer

@@ -3,9 +3,11 @@
 #extension GL_GOOGLE_include_directive : enable // Include files
 #extension GL_EXT_ray_tracing : enable // Raytracing
 #extension GL_EXT_nonuniform_qualifier : enable // Required for asserting that some array indexing is done with non-uniform indices
+#extension GL_EXT_debug_printf : enable
 
 // Include structs and bindings
-
+#include "rt_common/bindpoints.glsl"
+#include "common/camera.glsl" // Binds camera matrices UBO
 #include "rt_common/bindpoints.glsl" // Bindpoints (= descriptor set layout)
 #include "common/materialbuffer.glsl" // Material buffer for material information and texture array
 #include "rt_common/geometrymetabuffer.glsl" // GeometryMeta information
@@ -14,8 +16,22 @@
 #include "common/lcrng.glsl"
 #include "rt_common/tlas.glsl" // Binds Top Level Acceleration Structure
 
-#define BIND_SIMPLIFIEDLIGHTARRAY 11
-#include "rt_common/simplifiedlights.glsl"
+
+/// @brief Describes a simplified light source
+struct Light  // std430
+{
+    /// @brief LightBall
+    vec4 PositionAndRadius;
+};
+
+/// @brief Buffer containing array of simplified lights
+layout(set = 0, binding = 11, std430) buffer readonly LightsBuffer
+{
+    /// @brief Array of simplifiedlight structures (guaranteed at minimum Count)
+    Light Array[5];
+}
+Lights;
+
 
 #include "shading/constants.glsl"
 #include "shading/sampling.glsl"
@@ -36,166 +52,7 @@ void CorrectOrigin(inout vec3 origin, vec3 normal, float nDotL)
 {
     float correctorLength = clamp((1.0 - nDotL) * 0.005, 0, 1);
     origin += normal * correctorLength;
-}
-
-vec3 CollectDirectLight(in vec3 pos, in vec3 normal, in MaterialBufferObject material, in MaterialProbe probe)
-{
-    // Do a maximum of 5 light tests (since each is a ray cast, which is quite expensive)
-    const uint lightTestCount = min(5, SimplifiedLights.Count);
-
-    vec3 directLightSum = vec3(0);
-    int directLightWeight = 0;
-
-    for (uint i = 0; i < lightTestCount; i++)
-    {
-        // Randomly select a light source
-        lcgUint(ReturnPayload.Seed);
-        SimplifiedLight light = SimplifiedLights.Array[ReturnPayload.Seed % SimplifiedLights.Count];
-
-        vec3 origin = pos;
-        vec3 dir = vec3(0);
-        float len = 0;
-        if (light.Type == SimplifiedLightType_Directional)
-        {
-            dir = normalize(light.PosOrDir);
-            len = INFINITY;
-        }
-        else
-        {
-            dir = light.PosOrDir - origin;
-            len = length(dir);
-            dir = normalize(dir);
-        }
-        float nDotL = dot(dir, normal);
-        CorrectOrigin(origin, normal, nDotL);
-        
-
-        if (nDotL > 0) // If light source is not behind the surface ...
-        {
-            // Perform visibility test
-            VisiPayload.Hit = true;
-
-            traceRayEXT(MainTlas, // Top Level Acceleration Structure
-                gl_RayFlagsTerminateOnFirstHitEXT | gl_RayFlagsSkipClosestHitShaderEXT, // All we care about is the miss shader to tell us the lightsource is visible
-                0xff, // Culling Mask (Possible use: Skip intersection which don't have a specific bit set)
-                1,
-                0,
-                1, // Miss Index (the visibility test miss shader)
-                origin, // Ray origin in world space
-                0.001, // Minimum ray travel distance
-                dir, // Ray direction in world space
-                len, // Maximum ray travel distance
-                2 // Payload index (outgoing payload bound to location 0 in payload.glsl)
-            );
-
-            if (!VisiPayload.Hit) // If light source is visible ...
-            {
-                HitSample hit;
-                hit.Normal = normal;
-                hit.wOut = -gl_WorldRayDirectionEXT;
-                hit.wIn = dir;
-                hit.wHalf = normalize(hit.wOut + hit.wIn);
-
-                vec3 reflection = (ReturnPayload.Attenuation * light.Intensity * light.Color * EvaluateMaterial(hit, material, probe)) / (4 * PI); // Calculate light reflected
-
-                if (light.Type == SimplifiedLightType_Point)
-                {
-                    reflection /= (len * len);
-                }
-
-                directLightSum += reflection;
-                directLightWeight += 1;
-            }
-        }
-    }
-
-    if (directLightWeight > 0)
-    {
-        return directLightSum / directLightWeight;
-    }
-    else
-    {
-        return vec3(0);
-    }
-}
-
-vec3 CollectIndirectLight(in vec3 pos, in vec3 normal, in MaterialBufferObject material, in MaterialProbe probe)
-{
-    vec3 sumIndirect = vec3(0);
-    int weightIndirect = 0;
-
-    // Calculate count of secondary rays to emit. Use current rays Attenuation for bailout
-    const float attenuationModifier = min(dot(ReturnPayload.Attenuation, ReturnPayload.Attenuation), 1);
-    const float rng = lcgFloat(ReturnPayload.Seed);
-    const float modifier = 1.0;
-    uint secondary = uint(max(0, attenuationModifier + attenuationModifier * rng * modifier));
-
-    bool perfectlyReflective = probe.MetallicRoughness.r > 0.99 && probe.MetallicRoughness.g < 0.01;
-    if (perfectlyReflective)
-    {
-        // Use at most 1 ray for perfectly reflective surfaces
-        secondary = min(secondary, 1);
-    }
-
-    uint seed = ReturnPayload.Seed;
-    for (uint i = 0; i < secondary; i++)
-    {
-        seed += 1;
-        float alpha = probe.MetallicRoughness.g * probe.MetallicRoughness.g;
-        vec3 origin = pos;
-
-        HitSample hit;
-        hit.wOut = normalize(-gl_WorldRayDirectionEXT);
-        if (perfectlyReflective)
-        {
-            hit.Normal = normal;
-        }
-        else
-        {
-            hit.Normal = importanceSample_GGX(seed, probe.MetallicRoughness.g, normal);
-        }
-        hit.wIn = normalize(-reflect(hit.wOut, hit.Normal));
-        hit.wHalf = normalize(hit.wOut + hit.wIn);
-
-        float ndotl = dot(hit.wIn, hit.Normal);
-        float ndotv = dot(hit.wOut, hit.Normal);
-        CorrectOrigin(origin, normal, ndotl);
-
-        ConstructHitPayload();
-        ChildPayload.Seed = ReturnPayload.Seed + i;
-        ChildPayload.Attenuation = EvaluateMaterial(hit, material, probe);
-        ChildPayload.Depth = ReturnPayload.Depth + 1;
-
-        if (dot(ChildPayload.Attenuation, ChildPayload.Attenuation) > 0.001) // If expected contribution is high enough ...
-        {
-            // Trace a primary ray in the chosen direction
-
-            traceRayEXT(MainTlas, // Top Level Acceleration Structure
-                0, // RayFlags (Possible use: skip AnyHit, ClosestHit shaders etc.)
-                0xff, // Culling Mask (Possible use: Skip intersection which don't have a specific bit set)
-                0, // SBT record offset
-                0, // SBT record stride
-                0, // Miss Index
-                origin, // Ray origin in world space
-                0.001, // Minimum ray travel distance
-                hit.wIn, // Ray direction in world space
-                INFINITY, // Maximum ray travel distance
-                0 // Payload index (outgoing payload bound to location 0 in payload.glsl)
-            );
-
-            sumIndirect += ChildPayload.Radiance;
-            weightIndirect += 1;
-        }
-    }
-    if (weightIndirect > 0)
-    {
-        return sumIndirect / weightIndirect;
-    }
-    else
-    {
-        return vec3(0);
-    }
-}
+} 
 
 vec2 hammersley2d(uint i, uint N) 
 {
@@ -209,10 +66,15 @@ vec2 hammersley2d(uint i, uint N)
 	return vec2(float(i) /float(N), rdi);
 }
 
-
+// sources for hemisphere sampling
 // https://www.shadertoy.com/view/tltfWf Pick Points On Hemisphere
 // https://github.com/SaschaWillems/Vulkan-glTF-PBR/blob/master/data/shaders/genbrdflut.frag
 // https://www.shadertoy.com/view/4lscWj Hammersly Point Set
+// unrelated
+// https://alexanderameye.github.io/notes/sampling-the-hemisphere/
+// https://schuttejoe.github.io/post/ggximportancesamplingpart1/
+
+
 // uniform picking
 vec3 hemiSpherePoint(vec3 normal, uint seed)
 {
@@ -234,19 +96,35 @@ vec3 hemiSpherePoint(vec3 normal, uint seed)
     return normalize(p);
 }
 
-vec3 CollectIndirectLightRandomHemiSphere(in vec3 pos, in vec3 normal, in MaterialBufferObject material, in MaterialProbe probe)
+// cosine importance sampling
+vec3 hemiSpherePointCos2(vec3 normal, uint seed)
 {
+    float theta = 2.0 * PI * lcgFloat(seed);
+    float cosPhi = sqrt(sqrt(lcgFloat(seed)));
+    float phi = acos(cosPhi);
+    
+    vec3 zAxis = normal;
+	
+    vec3 xAxis = normalize(cross(normal, abs(normal.z) < 0.999 ? vec3(0.0, 0.0, 1.0) : vec3(1.0, 0.0, 0.0)));
+    vec3 yAxis = normalize(cross(normal, xAxis));
+    
+    vec3 x = cos(theta) * xAxis;
+    vec3 y = sin(theta) * yAxis;
+    vec3 horizontal = normalize(x + y);
+    vec3 z = cosPhi * zAxis;
+    vec3 p = horizontal * sin(phi) + z;
+    
+    return normalize(p);
+}
 
-	uint seed = ReturnPayload.Seed;
-	vec3 raydir = hemiSpherePoint(normal, seed);
-
-	float ndotl = dot(raydir, normal);
+vec4 CollectIncomingLightRandomHemiSphere(in vec3 pos, in vec3 normal, in vec3 outgoingDirection)
+{
+	float ndotl = dot(outgoingDirection, normal);
 	vec3 origin = pos;
     CorrectOrigin(origin, normal, ndotl);
 
 	ConstructHitPayload();
     ChildPayload.Seed = ReturnPayload.Seed + 1;
-    //ChildPayload.Attenuation = EvaluateMaterial(hit, material, probe);
     ChildPayload.Depth = ReturnPayload.Depth + 1;
 
 	traceRayEXT(MainTlas, // Top Level Acceleration Structure
@@ -257,13 +135,64 @@ vec3 CollectIndirectLightRandomHemiSphere(in vec3 pos, in vec3 normal, in Materi
                 0, // Miss Index
                 origin, // Ray origin in world space
                 0.001, // Minimum ray travel distance
-                raydir, // Ray direction in world space
+                outgoingDirection, // Ray direction in world space
                 INFINITY, // Maximum ray travel distance
                 0 // Payload index (outgoing payload bound to location 0 in payload.glsl)
             );
 			 
-	return ChildPayload.Radiance;
+	return vec4(ChildPayload.Radiance, ChildPayload.Distance);
 
+}
+
+// Cosine distribution picking by iq
+vec3 hemiSpherePointCos(vec3 normal, uint seed)
+{
+    float u = lcgFloat(seed);
+    float v = lcgFloat(seed);
+    float a = 6.2831853 * v;
+    u = 2.0*u - 1.0;
+    return normalize( normal + vec3(sqrt(1.0-u*u) * vec2(cos(a), sin(a)), u) );
+}
+
+// https://karthikkaranth.me/blog/generating-random-points-in-a-sphere/
+vec3 getPointInSphere(float r, uint seed) 
+{
+    float u = lcgFloat(seed);
+    float v = lcgFloat(seed);
+    float theta = u * 2.0 * PI;
+    float phi = acos(2.0 * v - 1.0);
+    float sinTheta = sin(theta);
+    float cosTheta = cos(theta);
+    float sinPhi = sin(phi);
+    float cosPhi = cos(phi);
+    float x = r * sinPhi * cosTheta;
+    float y = r * sinPhi * sinTheta;
+    float z = r * cosPhi;
+    return vec3(x,y,z);
+}
+
+vec3 sampleLight(vec3 origin, uint seed)
+{
+	// our example scene has 5 static lights
+	const uint numLights = 5;
+	
+	uint randomIndex = lcgUint(seed) % numLights;
+	Light selectedLight = Lights.Array[randomIndex];
+
+	vec3 pos = selectedLight.PositionAndRadius.yxz;
+	// adapt to world
+	vec3 realPos; 
+	realPos.x = pos.y;
+	realPos.y = -pos.x;
+	realPos.z = -pos.z;  
+	float radius = selectedLight.PositionAndRadius.w;
+
+	// pick random point around center
+	vec3 p = getPointInSphere(radius, seed);
+	realPos += p;
+
+	vec3 dir = realPos - origin;
+	return normalize(dir);
 }
 
 void main()
@@ -319,16 +248,62 @@ void main()
 
     normalWorldSpace = ApplyNormalMap(TBN, probe);
 
-    vec3 directLight = CollectDirectLight(posWorldSpace, normalWorldSpace, material, probe);
-    vec3 indirectLight = vec3(0);
 	 
+	// evaluate material at hit point
+	// sample_material(hitpoint, inDir, outDir, material, probe);
+	vec3 brdf = vec3(1);
+
+	// incoming light to current point
+	vec3 Li = vec3(0);
+
     if (ReturnPayload.Depth < 1)
     {
-        //indirectLight = CollectIndirectLight(posWorldSpace, normalWorldSpace, material, probe);
-        indirectLight = CollectIndirectLightRandomHemiSphere(posWorldSpace, normalWorldSpace, material, probe);
+		uint seed = ReturnPayload.Seed;
+		// incoming light direction Wi w
+		//vec3 Wi = hemiSpherePoint(normalWorldSpace, seed);
+		//vec3 Wi = hemiSpherePointCos2(normalWorldSpace, seed);
+        //vec3 Wi = hemiSpherePointCos(normalWorldSpace, seed); 
+
+		
+		vec3 ray = posWorldSpace - gl_WorldRayOriginEXT;
+		vec3 reflectedDir = normalize(reflect(ray, normalWorldSpace));
+
+		// sample after brdf
+		vec3 Wi2 = importanceSample_GGX(seed, probe.MetallicRoughness.y, reflectedDir);
+
+		// sample after Light
+		vec3 Wi = sampleLight(posWorldSpace, seed);
+
+		//vec3 Wi = vec3(-lcgFloat(seed), lcgFloat(seed), -lcgFloat(seed));
+
+		vec4 o = CollectIncomingLightRandomHemiSphere(posWorldSpace, normalWorldSpace, Wi);
+		vec4 o2 = CollectIncomingLightRandomHemiSphere(posWorldSpace, normalWorldSpace, Wi2);
+		//Li = o.xyz / (o.w*o.w);
+		Li = (o.xyz / (o.w*o.w)+o2.xyz)/2; 
+
+		// evaluate brdf based in sample direction wo
+		brdf = vec3(1); // TODO: sample_material(...)
     }
 
+	// emissive light 
+	vec3 Le = probe.EmissiveColor;
+
+	vec3 baseColor = probe.BaseColor.xyz;
+	
+
+	// emitted outgoing radiance 
     float rayDist = length(posWorldSpace - gl_WorldRayOriginEXT);
-    ReturnPayload.Radiance = directLight + indirectLight + probe.EmissiveColor;
+	vec3 Lo = Li * brdf + Le;
+
+	if(Le.x > 0 || Le.y > 0)
+	{
+		//debugPrintfEXT("Lo = %f, %f, %f \n", Lo.x, Lo.y, Lo.z);
+		//float f = lcgFloat(ReturnPayload.Seed);
+		//vec3 p = getPointInSphere(10.0, ReturnPayload.Seed);
+		
+		//debugPrintfEXT("point = %f, %f, %f \n", baseColor.x, baseColor.y, baseColor.z);
+	}
+
+    ReturnPayload.Radiance = Lo;
     ReturnPayload.Distance = length(posWorldSpace - gl_WorldRayOriginEXT);
 }
