@@ -2,12 +2,15 @@
 #include <imgui/imgui.h>
 
 #include <util/foray_imageloader.hpp>
+#include <util/foray_pipelinebuilder.hpp>
+#include <scene/foray_geo.hpp>
 
 #include <scene/components/foray_node_components.hpp>
 #include <scene/foray_mesh.hpp>
 #include <scene/globalcomponents/foray_materialmanager.hpp>
 
 #include "structs.hpp"
+
 
 //#define USE_PRINTF
 
@@ -39,6 +42,9 @@ void RestirProject::ApiBeforeInit()
 
     mInstance.SetEnableDebugReport(false);
 #endif
+
+	// allow drawing mesh in polygon line mode
+	mDevice.GetPhysicalDeviceFeatures().fillModeNonSolid = true;
 }
 
 void RestirProject::ApiInit()
@@ -74,16 +80,17 @@ void RestirProject::loadScene()
     std::vector<ModelLoad> modelLoads({
         // Bistro exterior
         {
-            .ModelPath = "E:/gltf/BistroExterior_out/BistroExterior.gltf",
+            //.ModelPath = "E:/gltf/BistroExterior_out/BistroExterior.gltf",
+            .ModelPath = "E:\\Programming\\foray_restir\\data\\gltf\\testbox\\scene_emissive2.gltf",
             //.ModelPath = "../data/scenes/sponza/glTF/Sponza.gltf",
             .ModelConverterOptions = {
                 .FlipY = false,
             },
         },
         // Light cube
-       /* {
+        {
             .ModelPath = "../data/scenes/cube/cube2.gltf",
-        }*/
+        }
     });
     // clang-format on
 
@@ -170,7 +177,6 @@ void RestirProject::CollectEmissiveTriangles()
         foray::scene::ncomp::MeshInstance* meshInstance = node->GetComponent<foray::scene::ncomp::MeshInstance>();
         foray::scene::Mesh*                mesh         = meshInstance->GetMesh();
         auto                               primitives   = mesh->GetPrimitives();
-        foray::logger()->info("Primitive size: {}", primitives.size());
 
         for(auto& primitve : primitives)
         {
@@ -184,7 +190,7 @@ void RestirProject::CollectEmissiveTriangles()
 
             foray::scene::Material& material = materials[materialIndex];
 
-            // if all components of emissive factor are 0, we skip primitive
+			// if all components of emissive factor are 0, we skip primitive
             if(glm::all(glm::equal(material.EmissiveFactor, glm::vec3(0))))
             {
                 foray::logger()->info("Discarded because emissive factor was 0");
@@ -193,8 +199,6 @@ void RestirProject::CollectEmissiveTriangles()
 
             vertices = &(primitve.Vertices);
             indices  = &(primitve.Indices);
-
-            foray::logger()->info("Chosen geometry with {} indices.", indices->size());
 
             // get geometry world transform
             foray::scene::ncomp::Transform* transform    = node->GetTransform();
@@ -310,6 +314,11 @@ void RestirProject::ConfigureStages()
     mGbufferStage.Init(&mContext, mScene.get());
     mRestirStage.Init(&mContext, mScene.get(), &mSphericalEnvMapSampler, &mNoiseSource.GetImage(), &mGbufferStage, this);
     mRestirStage.SetNumberOfTriangleLights(mTriangleLights.size());
+    
+	auto depthImage = mGbufferStage.GetImageOutput(mGbufferStage.DepthOutputName);
+    auto colorImage = mGbufferStage.GetImageOutput(mGbufferStage.AlbedoOutputName);
+    auto rtOutput = mRestirStage.GetImageOutput(mRestirStage.OutputName);
+    mETMStage.Init(&mContext, &mTriangleLights, depthImage, rtOutput, mScene.get());
     UpdateOutputs();
 
     mImguiStage.InitForSwapchain(&mContext);
@@ -321,6 +330,7 @@ void RestirProject::ConfigureStages()
 
 	RegisterRenderStage(&mGbufferStage);
     RegisterRenderStage(&mRestirStage);
+    RegisterRenderStage(&mETMStage);
     RegisterRenderStage(&mImguiStage);
     RegisterRenderStage(&mImageToSwapchainStage);
 }
@@ -352,6 +362,8 @@ void RestirProject::ApiRender(foray::base::FrameRenderInfo& renderInfo)
     }
 
     mRestirStage.RecordFrame(commandBuffer, renderInfo);
+
+	mETMStage.RecordFrame(commandBuffer, renderInfo);
 
     // copy final image to swapchain
     mImageToSwapchainStage.RecordFrame(commandBuffer, renderInfo);

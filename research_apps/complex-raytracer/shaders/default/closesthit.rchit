@@ -260,26 +260,48 @@ void main()
     {
 		uint seed = ReturnPayload.Seed;
 		// incoming light direction Wi w
-		//vec3 Wi = hemiSpherePoint(normalWorldSpace, seed);
-		//vec3 Wi = hemiSpherePointCos2(normalWorldSpace, seed);
+		//vec3 Wi2 = hemiSpherePoint(normalWorldSpace, seed);
+		//vec3 Wi2 = hemiSpherePointCos2(normalWorldSpace, seed);
         //vec3 Wi = hemiSpherePointCos(normalWorldSpace, seed); 
 
-		
+//		for(int i = 0; i < 3; i++)
+//		{
+//			vec3 ray = posWorldSpace - gl_WorldRayOriginEXT;
+//			vec3 reflectedDir = normalize(reflect(ray, normalWorldSpace));
+//
+//			// sample after brdf
+//			vec3 Wi2 = importanceSample_GGX(seed, probe.MetallicRoughness.y, reflectedDir);
+//
+//			// sample after Light
+//			//vec3 Wi2 = sampleLight(posWorldSpace, seed);
+//
+//			vec3 Wi = vec3(-lcgFloat(seed), lcgFloat(seed), -lcgFloat(seed));
+//
+//			vec4 o = CollectIncomingLightRandomHemiSphere(posWorldSpace, normalWorldSpace, Wi);
+//			vec4 o2 = CollectIncomingLightRandomHemiSphere(posWorldSpace, normalWorldSpace, Wi2);
+//			//Li = o2.xyz / (o2.w*o2.w);
+//			Li += o2.xyz;
+//			//Li = (o.xyz / (o.w*o.w)+o2.xyz)/2;
+//		}
+//		Li /= 3.0f;
+
 		vec3 ray = posWorldSpace - gl_WorldRayOriginEXT;
 		vec3 reflectedDir = normalize(reflect(ray, normalWorldSpace));
 
 		// sample after brdf
-		vec3 Wi2 = importanceSample_GGX(seed, probe.MetallicRoughness.y, reflectedDir);
+		//vec3 Wi2 = importanceSample_GGX(seed, probe.MetallicRoughness.y, reflectedDir);
 
 		// sample after Light
-		vec3 Wi = sampleLight(posWorldSpace, seed);
+		vec3 Wi2 = sampleLight(posWorldSpace, seed);
 
-		//vec3 Wi = vec3(-lcgFloat(seed), lcgFloat(seed), -lcgFloat(seed));
+		vec3 Wi = vec3(-lcgFloat(seed), lcgFloat(seed), -lcgFloat(seed));
 
 		vec4 o = CollectIncomingLightRandomHemiSphere(posWorldSpace, normalWorldSpace, Wi);
 		vec4 o2 = CollectIncomingLightRandomHemiSphere(posWorldSpace, normalWorldSpace, Wi2);
-		//Li = o.xyz / (o.w*o.w);
-		Li = (o.xyz / (o.w*o.w)+o2.xyz)/2; 
+		//Li = o2.xyz / (o2.w*o2.w);
+		Li = o2.xyz / (o2.w*o2.w);
+		//Li = (o.xyz / (o.w*o.w)+o2.xyz)/2;
+
 
 		// evaluate brdf based in sample direction wo
 		brdf = vec3(1); // TODO: sample_material(...)

@@ -24,6 +24,7 @@
 #include <util/foray_noisesource.hpp>
 
 #include "restirstage.hpp"
+#include "emissive_triangle_mesh_stage.hpp"
 
 class RestirProject : public foray::base::DefaultAppBase
 {
@@ -35,7 +36,6 @@ class RestirProject : public foray::base::DefaultAppBase
 
   protected:
     virtual void ApiBeforeInit() override;
-
     virtual void ApiInit() override;
     virtual void ApiOnEvent(const foray::osi::Event* event) override;
 
@@ -61,12 +61,18 @@ class RestirProject : public foray::base::DefaultAppBase
 
     /// @brief generates a GBuffer (Albedo, Positions, Normal, Motion Vectors, Mesh Instance Id as output images)
     foray::stages::GBufferStage mGbufferStage;
+
     /// @brief Renders immediate mode GUI
     foray::stages::ImguiStage mImguiStage;
+
     /// @brief Copies the intermediate rendertarget to the swapchain image
     foray::stages::ImageToSwapchainStage mImageToSwapchainStage;
+
     /// @brief Generates a raytraced image
     foray::RestirStage mRestirStage;
+
+	/// @brief Debug stage to visualize all triangles
+	EmissiveTriangleMeshStage mETMStage;
 
     foray::core::ManagedImage         mSphericalEnvMap{};
     foray::core::CombinedImageSampler mSphericalEnvMapSampler{};
