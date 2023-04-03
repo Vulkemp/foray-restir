@@ -137,8 +137,8 @@ void EmissiveTriangleMeshStage::RecordFrame(VkCommandBuffer cmdBuffer, foray::ba
 
     VkRenderPassBeginInfo renderPassInfo{};
     renderPassInfo.sType             = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-    renderPassInfo.renderPass        = mRenderpassV2;
-    renderPassInfo.framebuffer       = mFrameBufferV2;
+    renderPassInfo.renderPass        = mRenderpass;
+    renderPassInfo.framebuffer       = mFrameBuffer;
     renderPassInfo.renderArea.offset = {0, 0};
     renderPassInfo.renderArea.extent = mContext->Swapchain->extent;
 
@@ -146,22 +146,22 @@ void EmissiveTriangleMeshStage::RecordFrame(VkCommandBuffer cmdBuffer, foray::ba
     clearValues[0].color        = {{0.0f, 1.0f, 0.0f, 1.0f}};
     clearValues[1].depthStencil = {1.0f, 0};
 
-    renderPassInfo.clearValueCount   = clearValues.size();
+    renderPassInfo.clearValueCount = clearValues.size();
     renderPassInfo.pClearValues    = clearValues.data();
 
     vkCmdBeginRenderPass(cmdBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 
-    vkCmdBindPipeline(cmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, mPipelineV2);
+    vkCmdBindPipeline(cmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, mPipeline);
 
-	/*VkBuffer buffer = mVertexBuffer2.GetBuffer();
+    /*VkBuffer buffer = mVertexBuffer2.GetBuffer();
     VkDeviceSize offset = 0;
     vkCmdBindVertexBuffers(cmdBuffer, 0, 1, &buffer, &offset);
     vkCmdDraw(cmdBuffer, 3, 1, 0, 0);*/
 
-	VkDescriptorSet descriptorSet = mDescriptorSet.GetDescriptorSet();
-    vkCmdBindDescriptorSets(cmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, mPipelineLayoutV2, 0, 1, &descriptorSet, 0, nullptr);
+    VkDescriptorSet descriptorSet = mDescriptorSet.GetDescriptorSet();
+    vkCmdBindDescriptorSets(cmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, mPipelineLayout, 0, 1, &descriptorSet, 0, nullptr);
 
-	VkBuffer     buffer = mVertexBuffer.GetBuffer();
+    VkBuffer     buffer = mVertexBuffer.GetBuffer();
     VkDeviceSize offset = 0;
     vkCmdBindVertexBuffers(cmdBuffer, 0, 1, &buffer, &offset);
     vkCmdDraw(cmdBuffer, mTriangleVertices.size(), 1, 0, 0);
@@ -231,6 +231,7 @@ void EmissiveTriangleMeshStage::CreatePipeline()
     builder.SetRenderPass(mRenderpass);
     builder.SetColorAttachmentBlendCount(1);
     builder.SetCullMode(VK_CULL_MODE_NONE);
+    builder.SetPolygonMode(VK_POLYGON_MODE_LINE);
     builder.SetPipelineLayout(mPipelineLayout.GetPipelineLayout());
     mPipeline = builder.Build();
 }
@@ -262,11 +263,11 @@ void EmissiveTriangleMeshStage::CreateTriangleVertexBuffer()
     mVertexBuffer.Create(mContext, bufferUsage, bufferSize, bufferMemUsage, allocFlags, "TriangleLightsVertexBuffer");
     mVertexBuffer.WriteDataDeviceLocal(mTriangleVertices.data(), bufferSize);
 
-    std::vector<glm::vec3> p            = {{0.5, 0.0, 0}, {1, 1.0, 0}, {0, 1, 0}};
- 
+    std::vector<glm::vec3> p = {{0.5, 0.0, 0}, {1, 1.0, 0}, {0, 1, 0}};
+
     //std::vector<glm::vec3> p            = {{0.0, -0.5, 0}, {0.5, 0.5, 0}, {-0.5, 0.5, 0}};
-    VkBufferUsageFlags     bufferUsage2 = VkBufferUsageFlagBits::VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
-    VkDeviceSize           bufferSize2  = p.size() * sizeof(glm::vec3);
+    VkBufferUsageFlags bufferUsage2 = VkBufferUsageFlagBits::VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+    VkDeviceSize       bufferSize2  = p.size() * sizeof(glm::vec3);
     mVertexBuffer2.Create(mContext, bufferUsage2, bufferSize2, bufferMemUsage, allocFlags, "TriangleXXX");
     mVertexBuffer2.WriteDataDeviceLocal(p.data(), bufferSize2);
 
@@ -320,33 +321,25 @@ void EmissiveTriangleMeshStage::PrepareRenderpass()
     subpass.pColorAttachments       = &colorAttachmentReference;
     subpass.pDepthStencilAttachment = &depthAttachmentReference;
 
-    VkSubpassDependency dependency{};
-    dependency.srcSubpass    = VK_SUBPASS_EXTERNAL;
-    dependency.dstSubpass    = 0;
-    dependency.srcStageMask  = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    dependency.srcAccessMask = 0;
-    dependency.dstStageMask  = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    VkSubpassDependency subPassDependencies[2] = {};
+    subPassDependencies[0].srcSubpass          = VK_SUBPASS_EXTERNAL;
+    subPassDependencies[0].dstSubpass          = 0;
+    subPassDependencies[0].srcStageMask        = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
+    subPassDependencies[0].dstStageMask  = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
+    subPassDependencies[0].srcAccessMask = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT;
+    subPassDependencies[0].dstAccessMask =
+        VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+    subPassDependencies[0].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
 
-    // Subpass dependencies for layout transitions
-    std::array<VkSubpassDependency, 2> dependencies;
+    subPassDependencies[1].srcSubpass   = 0;
+    subPassDependencies[1].dstSubpass   = VK_SUBPASS_EXTERNAL;
+    subPassDependencies[1].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
+    subPassDependencies[1].dstStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
+    subPassDependencies[1].srcAccessMask =
+        VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+    subPassDependencies[1].dstAccessMask   = VK_ACCESS_MEMORY_READ_BIT;
+    subPassDependencies[1].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
 
-    // This makes sure that writes to the depth image are done before we try to write to it again
-    dependencies[0].srcSubpass      = VK_SUBPASS_EXTERNAL;
-    dependencies[0].dstSubpass      = 0;
-    dependencies[0].srcStageMask    = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
-    dependencies[0].dstStageMask    = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
-    dependencies[0].srcAccessMask   = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT;
-    dependencies[0].dstAccessMask   = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT;
-    dependencies[0].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
-
-    dependencies[1].srcSubpass      = VK_SUBPASS_EXTERNAL;
-    dependencies[1].dstSubpass      = 0;
-    dependencies[1].srcStageMask    = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
-    dependencies[1].dstStageMask    = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    dependencies[1].srcAccessMask   = VK_ACCESS_MEMORY_READ_BIT;
-    dependencies[1].dstAccessMask   = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-    dependencies[1].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
 
     VkRenderPassCreateInfo renderPassInfo = {};
     renderPassInfo.sType                  = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
@@ -355,7 +348,7 @@ void EmissiveTriangleMeshStage::PrepareRenderpass()
     renderPassInfo.subpassCount           = 1;
     renderPassInfo.pSubpasses             = &subpass;
     renderPassInfo.dependencyCount        = 2;
-    renderPassInfo.pDependencies          = dependencies.data();
+    renderPassInfo.pDependencies          = subPassDependencies;
     AssertVkResult(vkCreateRenderPass(mContext->Device(), &renderPassInfo, nullptr, &mRenderpass));
 
     std::vector<VkImageView> attachmentViews;
@@ -572,7 +565,7 @@ void EmissiveTriangleMeshStage::createGraphicsPipeline()
     pipelineLayoutInfo.sType                  = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
     pipelineLayoutInfo.setLayoutCount         = 1;
     pipelineLayoutInfo.pushConstantRangeCount = 0;
-    auto descriptorSetLayout = mDescriptorSet.GetDescriptorSetLayout();
+    auto descriptorSetLayout                  = mDescriptorSet.GetDescriptorSetLayout();
     pipelineLayoutInfo.pSetLayouts            = &descriptorSetLayout;
 
     if(vkCreatePipelineLayout(mContext->Device(), &pipelineLayoutInfo, nullptr, &mPipelineLayoutV2) != VK_SUCCESS)
@@ -633,14 +626,14 @@ void EmissiveTriangleMeshStage::createRenderPass()
 
     // Depth Output
     VkAttachmentDescription depthAttachmentDescription{};
-    depthAttachmentDescription.samples        = mDepthImage->GetSampleCount();
+    depthAttachmentDescription.samples        = mDepthOutput.GetSampleCount();
     depthAttachmentDescription.loadOp         = VK_ATTACHMENT_LOAD_OP_CLEAR;
     depthAttachmentDescription.storeOp        = VK_ATTACHMENT_STORE_OP_STORE;
     depthAttachmentDescription.stencilLoadOp  = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
     depthAttachmentDescription.stencilStoreOp = VK_ATTACHMENT_STORE_OP_STORE;
     depthAttachmentDescription.initialLayout  = VK_IMAGE_LAYOUT_UNDEFINED;
     depthAttachmentDescription.finalLayout    = VkImageLayout::VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-    depthAttachmentDescription.format         = mDepthImage->GetFormat();
+    depthAttachmentDescription.format         = mDepthOutput.GetFormat();
 
     std::vector<VkAttachmentDescription> attachmentDescriptions;
     attachmentDescriptions.push_back(colorAttachment);
@@ -681,7 +674,7 @@ void EmissiveTriangleMeshStage::createRenderPass()
 
     std::vector<VkImageView> attachmentViews;
     attachmentViews.push_back(mOutput->GetImageView());
-    attachmentViews.push_back(mDepthImage->GetImageView());
+    attachmentViews.push_back(mDepthOutput.GetImageView());
 
     VkFramebufferCreateInfo fbufCreateInfo = {};
     fbufCreateInfo.sType                   = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;

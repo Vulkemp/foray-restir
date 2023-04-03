@@ -33,7 +33,8 @@ class EmissiveTriangleMeshStage : public foray::stages::RasterizedRenderStage
 		CreateDescriptorSets();
 		CreatePipelineLayout();
 		PrepareRenderpass();
-        createRenderPass();
+        
+		createRenderPass();
 
         CreateShaders();
 
