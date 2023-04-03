@@ -88,4 +88,6 @@ class RestirProject : public foray::base::DefaultAppBase
 
     void UpdateOutputs();
     void ApplyOutput();
+
+	bool mHighlightEmissiveTriangles = false;
 };

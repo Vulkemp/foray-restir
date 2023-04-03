@@ -9,7 +9,7 @@ class EmissiveTriangleMeshStage : public foray::stages::RasterizedRenderStage
   public:
     // overrides
     virtual void RecordFrame(VkCommandBuffer cmdBuffer, foray::base::FrameRenderInfo& renderInfo) override;
-    virtual void Destroy() override{};
+    virtual void Destroy() override;
     virtual void Resize(const VkExtent2D& extent) override{};
     virtual void OnShadersRecompiled(const std::unordered_set<uint64_t>& recompiled) override{};
     virtual ~EmissiveTriangleMeshStage() {}
@@ -27,23 +27,16 @@ class EmissiveTriangleMeshStage : public foray::stages::RasterizedRenderStage
 		mOutput = output;
         mScene = scene;
 
-        CreateImages();
 		CreateTriangleVertexBuffer();
         SetupDescriptors();
 		CreateDescriptorSets();
 		CreatePipelineLayout();
 		PrepareRenderpass();
-        
-		createRenderPass();
-
         CreateShaders();
-
-		createGraphicsPipeline();
         CreatePipeline();
     }
 
     // individual
-    VkPipeline mPipeline{};
     void       CreatePipeline();
     void       CreateShaders();
 
@@ -56,8 +49,6 @@ class EmissiveTriangleMeshStage : public foray::stages::RasterizedRenderStage
     std::vector<glm::vec3>         mTriangleVertices;
     std::vector<shader::TriLight>* mTriangles;
     foray::core::ManagedBuffer     mVertexBuffer;
-    foray::core::ManagedBuffer     mVertexBuffer2;
-    foray::core::ManagedBuffer     mIndices2;
     void                           CreateTriangleVertexBuffer();
 
 	foray::core::ManagedImage* mDepthImage;
@@ -65,17 +56,7 @@ class EmissiveTriangleMeshStage : public foray::stages::RasterizedRenderStage
     foray::scene::Scene*              mScene;
 
 	void PrepareRenderpass();
-    void CreateImages();
-	foray::core::ManagedImage mColorOutput;
-	foray::core::ManagedImage mDepthOutput;
 
-	VkPipeline mPipelineV2;
-	VkPipelineLayout mPipelineLayoutV2;
-	void createGraphicsPipeline();
-
-	VkRenderPass mRenderpassV2;
-	VkFramebuffer mFrameBufferV2;
-    void             createRenderPass();
 
   protected:
     /// @brief Override this to reload all shaders and rebuild pipelines after a registered shader has been recompiled.

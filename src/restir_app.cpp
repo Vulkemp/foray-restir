@@ -1,9 +1,9 @@
 #include "restir_app.hpp"
 #include <imgui/imgui.h>
 
+#include <scene/foray_geo.hpp>
 #include <util/foray_imageloader.hpp>
 #include <util/foray_pipelinebuilder.hpp>
-#include <scene/foray_geo.hpp>
 
 #include <scene/components/foray_node_components.hpp>
 #include <scene/foray_mesh.hpp>
@@ -43,8 +43,11 @@ void RestirProject::ApiBeforeInit()
     mInstance.SetEnableDebugReport(false);
 #endif
 
-	// allow drawing mesh in polygon line mode
-	mDevice.GetPhysicalDeviceFeatures().fillModeNonSolid = true;
+    // performance
+    //mInstance.SetEnableDebugLayersAndCallbacks(false);
+
+    // allow drawing mesh in polygon line mode
+    mDevice.GetPhysicalDeviceFeatures().fillModeNonSolid = true;
 }
 
 void RestirProject::ApiInit()
@@ -190,7 +193,7 @@ void RestirProject::CollectEmissiveTriangles()
 
             foray::scene::Material& material = materials[materialIndex];
 
-			// if all components of emissive factor are 0, we skip primitive
+            // if all components of emissive factor are 0, we skip primitive
             if(glm::all(glm::equal(material.EmissiveFactor, glm::vec3(0))))
             {
                 foray::logger()->info("Discarded because emissive factor was 0");
@@ -205,7 +208,7 @@ void RestirProject::CollectEmissiveTriangles()
             glm::mat4                       transformMat = transform->GetGlobalMatrix();
 
             // create triangles from vertices & indices
-            uint32_t baseCount = mTriangleLights.size();
+            uint32_t baseCount    = mTriangleLights.size();
             uint32_t numTriangles = (indices->size() / 3);
             mTriangleLights.resize(baseCount + numTriangles);
             for(size_t i = 0; i < indices->size(); i += 3)
@@ -252,6 +255,7 @@ void RestirProject::ApiDestroy()
     mGbufferStage.Destroy();
     mImguiStage.Destroy();
     mRestirStage.Destroy();
+	mETMStage.Destroy();
     mSphericalEnvMap.Destroy();
     mTriangleLightsBuffer.Destroy();
 }
@@ -272,6 +276,8 @@ void RestirProject::PrepareImguiWindow()
         {
             ImGui::Text("FPS: avg: %f min: %f", 1.f / analysis.AvgFrameTime, 1.f / analysis.MaxFrameTime);
         }
+
+        ImGui::Checkbox("Highlight emissive Triangles", &mHighlightEmissiveTriangles);
 
         const char* current = mCurrentOutput.data();
         if(ImGui::BeginCombo("Output", current))
@@ -314,10 +320,10 @@ void RestirProject::ConfigureStages()
     mGbufferStage.Init(&mContext, mScene.get());
     mRestirStage.Init(&mContext, mScene.get(), &mSphericalEnvMapSampler, &mNoiseSource.GetImage(), &mGbufferStage, this);
     mRestirStage.SetNumberOfTriangleLights(mTriangleLights.size());
-    
-	auto depthImage = mGbufferStage.GetImageOutput(mGbufferStage.DepthOutputName);
+
+    auto depthImage = mGbufferStage.GetImageOutput(mGbufferStage.DepthOutputName);
     auto colorImage = mGbufferStage.GetImageOutput(mGbufferStage.AlbedoOutputName);
-    auto rtOutput = mRestirStage.GetImageOutput(mRestirStage.OutputName);
+    auto rtOutput   = mRestirStage.GetImageOutput(mRestirStage.OutputName);
     mETMStage.Init(&mContext, &mTriangleLights, depthImage, rtOutput, mScene.get());
     UpdateOutputs();
 
@@ -328,7 +334,7 @@ void RestirProject::ConfigureStages()
     mImageToSwapchainStage.Init(&mContext, mOutputs[mCurrentOutput]);
     mImageToSwapchainStage.SetFlipY(true);
 
-	RegisterRenderStage(&mGbufferStage);
+    RegisterRenderStage(&mGbufferStage);
     RegisterRenderStage(&mRestirStage);
     RegisterRenderStage(&mETMStage);
     RegisterRenderStage(&mImguiStage);
@@ -352,18 +358,19 @@ void RestirProject::ApiRender(foray::base::FrameRenderInfo& renderInfo)
     // after gbuffer stage, transform depth from attachment optimal to read optimal
     {
         foray::core::ImageLayoutCache::Barrier barrier;
-        barrier.SrcAccessMask               = 0;
-        barrier.DstAccessMask               = 0;
+        barrier.SrcAccessMask               = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+        barrier.DstAccessMask               = VK_ACCESS_SHADER_READ_BIT;
         barrier.NewLayout                   = VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL;
         barrier.SubresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
 
         renderInfo.GetImageLayoutCache().CmdBarrier(commandBuffer, mGbufferStage.GetImageOutput(foray::stages::GBufferStage::DepthOutputName), barrier,
-                                                    VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR);
+                                                    VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR);
     }
 
     mRestirStage.RecordFrame(commandBuffer, renderInfo);
 
-	mETMStage.RecordFrame(commandBuffer, renderInfo);
+    if(mHighlightEmissiveTriangles)
+        mETMStage.RecordFrame(commandBuffer, renderInfo);
 
     // copy final image to swapchain
     mImageToSwapchainStage.RecordFrame(commandBuffer, renderInfo);
