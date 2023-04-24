@@ -44,7 +44,7 @@ void RestirProject::ApiBeforeInit()
 #endif
 
     // performance
-    //mInstance.SetEnableDebugLayersAndCallbacks(false);
+    mInstance.SetEnableDebugLayersAndCallbacks(false);
 
     // allow drawing mesh in polygon line mode
     mDevice.GetPhysicalDeviceFeatures().fillModeNonSolid = true;
@@ -84,16 +84,16 @@ void RestirProject::loadScene()
         // Bistro exterior
         {
             //.ModelPath = "E:/gltf/BistroExterior_out/BistroExterior.gltf",
-            .ModelPath = "E:\\Programming\\foray_restir\\data\\gltf\\testbox\\scene_emissive2.gltf",
+            .ModelPath = "E:\\Programming\\foray_restir\\data\\gltf\\testbox\\pillar_room.gltf",
             //.ModelPath = "../data/scenes/sponza/glTF/Sponza.gltf",
             .ModelConverterOptions = {
                 .FlipY = false,
             },
         },
         // Light cube
-        {
+      /*  {
             .ModelPath = "../data/scenes/cube/cube2.gltf",
-        }
+        }*/
     });
     // clang-format on
 

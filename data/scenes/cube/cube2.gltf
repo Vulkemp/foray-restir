@@ -1,6 +1,6 @@
 {
     "asset" : {
-        "generator" : "Khronos glTF Blender I/O v3.3.32",
+        "generator" : "Khronos glTF Blender I/O v3.4.50",
         "version" : "2.0"
     },
     "scene" : 0,
@@ -26,14 +26,13 @@
     "materials" : [
         {
             "doubleSided" : true,
-            "name" : "Material",
+            "emissiveFactor" : [
+                1,
+                1,
+                1
+            ],
+            "name" : "Material.001",
             "pbrMetallicRoughness" : {
-                "baseColorFactor" : [
-                    0.800000011920929,
-                    0.800000011920929,
-                    0.800000011920929,
-                    1
-                ],
                 "metallicFactor" : 0,
                 "roughnessFactor" : 0.5
             }
@@ -41,13 +40,13 @@
     ],
     "meshes" : [
         {
-            "name" : "Cube",
+            "name" : "Cube.001",
             "primitives" : [
                 {
                     "attributes" : {
                         "POSITION" : 0,
-                        "NORMAL" : 1,
-                        "TEXCOORD_0" : 2
+                        "TEXCOORD_0" : 1,
+                        "NORMAL" : 2
                     },
                     "indices" : 3,
                     "material" : 0
@@ -76,13 +75,13 @@
             "bufferView" : 1,
             "componentType" : 5126,
             "count" : 24,
-            "type" : "VEC3"
+            "type" : "VEC2"
         },
         {
             "bufferView" : 2,
             "componentType" : 5126,
             "count" : 24,
-            "type" : "VEC2"
+            "type" : "VEC3"
         },
         {
             "bufferView" : 3,
@@ -100,14 +99,14 @@
         },
         {
             "buffer" : 0,
-            "byteLength" : 288,
+            "byteLength" : 192,
             "byteOffset" : 288,
             "target" : 34962
         },
         {
             "buffer" : 0,
-            "byteLength" : 192,
-            "byteOffset" : 576,
+            "byteLength" : 288,
+            "byteOffset" : 480,
             "target" : 34962
         },
         {
