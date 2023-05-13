@@ -101,11 +101,14 @@ void combineReservoirs(inout Reservoir self, Reservoir other, float pHat[RESERVO
 		}
 	}
 }
+#define RESTIR_LIGHT_INDEX_INVALID 0
 
 Reservoir newReservoir() {
 	Reservoir result;
 	for (int i = 0; i < RESERVOIR_SIZE; ++i) {
 		result.samples[i].sumWeights = 0.0f;
+		result.samples[i].pHat = 0.0f;
+		result.samples[i].lightIndex = 0;
 	}
 	result.numStreamSamples = 0u;
 	return result;

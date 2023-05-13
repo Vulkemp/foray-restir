@@ -85,7 +85,8 @@ void RestirProject::loadScene()
         {
             //.ModelPath = "E:/gltf/BistroExterior_out/BistroExterior.gltf",
             .ModelPath = "E:\\Programming\\foray_restir\\data\\gltf\\testbox\\pillar_room.gltf",
-            //.ModelPath = "../data/scenes/sponza/glTF/Sponza.gltf",
+           // .ModelPath = "E:\\Programming\\foray_restir\\data\\gltf\\testbox\\scene_emissive2.gltf",
+            //.ModelPath = "../data/scenes/sponza/glTF/Sponza.gltf", s
             .ModelConverterOptions = {
                 .FlipY = false,
             },
@@ -403,6 +404,7 @@ void RestirProject::UpdateOutputs()
     lUpdateOutput(mOutputs, mGbufferStage, foray::stages::GBufferStage::AlbedoOutputName);
     lUpdateOutput(mOutputs, mGbufferStage, foray::stages::GBufferStage::PositionOutputName);
     lUpdateOutput(mOutputs, mGbufferStage, foray::stages::GBufferStage::NormalOutputName);
+    lUpdateOutput(mOutputs, mGbufferStage, foray::stages::GBufferStage::MaterialIdxOutputName);
     lUpdateOutput(mOutputs, mRestirStage, foray::stages::DefaultRaytracingStageBase::OutputName);
 
     if(mCurrentOutput.size() == 0 || !mOutputs.contains(mCurrentOutput))

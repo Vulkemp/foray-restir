@@ -93,11 +93,12 @@ namespace foray {
             GBUFFER_NORMAL = 1,
             GBUFFER_POS    = 2,
             GBUFFER_MOTION = 3,
+			GBUFFER_MATERIAL_INDEX = 4
         };
 
         foray::stages::GBufferStage*              mGBufferStage{};
-        std::array<core::ManagedImage*, 4>        mGBufferImages;
-        std::array<core::CombinedImageSampler, 4> mGBufferImagesSampled;
+        std::array<core::ManagedImage*, 5>        mGBufferImages;
+        std::array<core::CombinedImageSampler, 5> mGBufferImagesSampled;
 
 		static inline const std::string RAYGEN_FILE = "shaders/raygen.rgen";
         static inline const std::string ANYHIT_FILE  = "shaders/ray-default/anyhit.rahit";

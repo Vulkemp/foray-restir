@@ -39,7 +39,8 @@ namespace foray {
     void RestirStage::GetGBufferImages()
     {
         mGBufferImages = {mGBufferStage->GetImageEOutput(stages::GBufferStage::EOutput::Albedo), mGBufferStage->GetImageEOutput(stages::GBufferStage::EOutput::Normal),
-                          mGBufferStage->GetImageEOutput(stages::GBufferStage::EOutput::Position), mGBufferStage->GetImageEOutput(stages::GBufferStage::EOutput::Motion)};
+                          mGBufferStage->GetImageEOutput(stages::GBufferStage::EOutput::Position), mGBufferStage->GetImageEOutput(stages::GBufferStage::EOutput::Motion),
+                          mGBufferStage->GetImageEOutput(stages::GBufferStage::EOutput::MaterialIdx)};
     }
 
     void RestirStage::CreateOutputImages()
@@ -144,6 +145,7 @@ namespace foray {
             }
             mDescriptorSet.SetDescriptorAt(14, sampledImages, VkImageLayout::VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
                                            VK_SHADER_STAGE_RAYGEN_BIT_KHR);
+
         }
 
 
@@ -198,6 +200,7 @@ namespace foray {
             mGBufferImages[UsedGBufferImages::GBUFFER_NORMAL],
             mGBufferImages[UsedGBufferImages::GBUFFER_POS],
             mGBufferImages[UsedGBufferImages::GBUFFER_MOTION],
+
         };
 
         std::vector<VkImageMemoryBarrier> imageMemoryBarriers;

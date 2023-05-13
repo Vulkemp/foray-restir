@@ -74,6 +74,7 @@ vec2 hammersley2d(uint i, uint N)
 // https://alexanderameye.github.io/notes/sampling-the-hemisphere/
 // https://schuttejoe.github.io/post/ggximportancesamplingpart1/
 
+// https://blog.thomaspoulet.fr/uniform-sampling-on-unit-hemisphere/
 
 // uniform picking
 vec3 hemiSpherePoint(vec3 normal, uint seed)
