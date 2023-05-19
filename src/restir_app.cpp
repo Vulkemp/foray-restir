@@ -8,6 +8,8 @@
 #include <scene/components/foray_node_components.hpp>
 #include <scene/foray_mesh.hpp>
 #include <scene/globalcomponents/foray_materialmanager.hpp>
+#include <scene/globalcomponents/foray_animationmanager.hpp>
+
 
 #include "structs.hpp"
 
@@ -83,9 +85,9 @@ void RestirProject::loadScene()
     std::vector<ModelLoad> modelLoads({
         // Bistro exterior
         {
-            //.ModelPath = "E:/gltf/BistroExterior_out/BistroExterior.gltf",
-            .ModelPath = "E:\\Programming\\foray_restir\\data\\gltf\\testbox\\pillar_room.gltf",
-           // .ModelPath = "E:\\Programming\\foray_restir\\data\\gltf\\testbox\\scene_emissive2.gltf",
+            .ModelPath = "E:/gltf/BistroExterior_out/BistroExterior.gltf",
+            //.ModelPath = "E:\\Programming\\foray_restir\\data\\gltf\\testbox\\pillar_room.gltf",
+            //.ModelPath = "E:\\Programming\\foray_restir\\data\\gltf\\testbox\\scene_emissive2.gltf",
             //.ModelPath = "../data/scenes/sponza/glTF/Sponza.gltf", s
             .ModelConverterOptions = {
                 .FlipY = false,
@@ -107,6 +109,9 @@ void RestirProject::loadScene()
 
     mScene->UpdateTlasManager();
     mScene->UseDefaultCamera(true);
+
+    auto ptr = mScene->GetComponent<foray::scene::gcomp::AnimationManager>();
+    ptr->GetPlaybackConfig().PlaybackSpeed = 0;
 
     for(int32_t i = 0; i < modelLoads.size(); i++)
     {

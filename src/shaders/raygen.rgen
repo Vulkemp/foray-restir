@@ -135,7 +135,7 @@ bool testVisibility(vec3 p1, vec3 p2) {
 // Offsets a ray origin slightly away from the surface to prevent self shadowing
 void CorrectOrigin(inout vec3 origin, vec3 normal)
 {
-    origin += normal * 0.1;
+    origin += normal * 0.005;
 } 
 
 void main() 
@@ -149,8 +149,10 @@ void main()
 
 	// DEBUG: using printf calls only for pixel at X,Y=200
 	bool activatePrintf = false;
+	bool px400 = false;
 	if(pixelCoord.x == 200 && pixelCoord.y == 200)
 	{
+		px400 = false;
 		activatePrintf = false;
 	}
 
@@ -183,12 +185,12 @@ void main()
 		//debugPrintfEXT("%f \n", mat.RoughnessFactor);
 	}
 
-//	if(gbuf_pos.x == 0 && gbuf_pos.y == 0 && gbuf_pos.z == 0)
-//	{
-//		// invalid position => discard
-//		imageStore(ImageOutput, ivec2(pixelCoord), vec4(0));
-//		return;
-//	}
+	if(gbuf_pos.x == 0 && gbuf_pos.y == 0 && gbuf_pos.z == 0)
+	{
+		// invalid position => discard
+		imageStore(ImageOutput, ivec2(pixelCoord), vec4(0));
+		return;
+	}
 
 	MaterialBufferObject surfaceMaterial = GetMaterialOrFallback(int(gbuf_materialIndex));
 	float albedoLum = luminance(gbuf_albedo);
@@ -203,8 +205,10 @@ void main()
 		//aliasTableSample(randFloat(rand), randFloat(rand), selected_idx, lightSampleProb);
 
 		// probability for each light, sums to 1 bcs of the 32 initial samples.
-		float lightSampleProb = 1.0f/32.0f;
+		//float lightSampleProb = 1.0f/32.0f;
+		float lightSampleProb = 1.0f;
 
+		randomSeed++;
 		uint randomNr = lcgUint(randomSeed);
 		uint selected_idx = randomNr % RestirConfig.NumTriLights;
 
@@ -212,7 +216,9 @@ void main()
 		// debug: triangle index 11 always yields 0.
 
 		TriLight light = triLights.triLights[selected_idx];
-		vec3 lightSamplePos = pickPointOnTriangle(lcgFloat(randomSeed), lcgFloat(randomSeed), light.p1.xyz, light.p2.xyz, light.p3.xyz);
+		uint r1 = randomSeed++;
+		uint r2 = randomSeed++;
+		vec3 lightSamplePos = pickPointOnTriangle(lcgFloat(r1), lcgFloat(r2), light.p1.xyz, light.p2.xyz, light.p3.xyz);
 
 		// TODO: calculate luminance from material id
 		// lightSampleLum = light.emission_luminance.w;
@@ -223,10 +229,11 @@ void main()
 		vec3 normal = normalize(vec3(light.normal.xyz));
 
 		// lights that don't face surface are discarded?
-		float normalToLight = clamp(dot(wi, normal), 1e-4, 1);
+		float normalToLight = clamp(dot(wi, normal), 1e-3, 1);
 		float triangleAreaSize = light.normal.w; // the bigger the triangle, the smaller the probability
 		lightSampleProb *= normalToLight * triangleAreaSize; // the worse the normalToLight angle, the smaller the probability
-
+		if(activatePrintf)
+			debugPrintfEXT("triangleAreaSize: %f, %f, %f \n", triangleAreaSize, lightSampleProb, normalToLight );
 
 		//debugPrintfEXT("normalToLightFactor %f, triangleAreaSize %f, lightSampleProb %f \n", normalToLight, triangleAreaSize,lightSampleProb);
 		vec4 lightNormal = vec4(normal, 1.0f);
@@ -238,18 +245,25 @@ void main()
 			albedoLum, lightSampleLum, surfaceMaterial.RoughnessFactor, surfaceMaterial.MetallicFactor
 		);
 
+		// remove triangle self illumination
 		if(distance(gbuf_pos, lightSamplePos) < 1)
 		{
 			pHat = 0.0f;
 		}
 
-		 //pHat = 1.0f;
-
-		addSampleToReservoir(res, lightSamplePos, lightNormal, lightSampleLum, selected_idx, pHat, lightSampleProb, randomSeed, false);
+		addSampleToReservoir(res, lightSamplePos, lightNormal, lightSampleLum, selected_idx, pHat, lightSampleProb, randomSeed, activatePrintf);
 	}
 
 	 // check if the RESERVOIR_SIZE selected samples are have visibility to surface point
 		for (int i = 0; i < RESERVOIR_SIZE; i++) {
+			uint lightIndex = res.samples[i].lightIndex;
+			if( lightIndex == RESTIR_LIGHT_INDEX_INVALID )
+			{
+				res.samples[i].w = 0.0f;
+				res.samples[i].sumWeights = 0.0f;
+				res.samples[i].pHat = 0.0f;
+				continue;
+			}
 			vec3 lightDir = normalize(res.samples[i].position_emissionLum.xyz - gbuf_pos);
 			vec3 origin = gbuf_pos;
 			CorrectOrigin(origin, gbuf_normal);
@@ -259,6 +273,7 @@ void main()
 			if (shadowed) { 
 				res.samples[i].w = 0.0f;
 				res.samples[i].sumWeights = 0.0f;
+				res.samples[i].pHat = 0.0f;
 			}
 		} 
 
@@ -270,11 +285,10 @@ void main()
 	// + 0.5 to move from pixel center leads to more accurate reprojection
 	//vec2 oldCoords = pixelCoord + motion + vec2(0.5f);
 	vec2 oldCoords = pixelCoord + motion + vec2(0.5f);
-	
-	
+
 	bool positionDiffValid = false;
 	bool normalDiffValid = false;
-	bool albedoDiffValid = false;
+	//bool albedoDiffValid = false;
 	if(
 		all(greaterThanEqual(oldCoords.xy, vec2(-1.0f))) &&
 		all(lessThanEqual(oldCoords.xy, screenSize))
@@ -283,7 +297,8 @@ void main()
 		// compare world space position
 		vec3 oldWorldPos = texelFetch(PreviousFrameImages[PREVIOUSFRAME_POS], ivec2(oldCoords), 0).xyz;
 		vec3 positionDiff = gbuf_pos - oldWorldPos;
-		const float maxPosDiff = 0.15f;
+		//const float maxPosDiff = 0.005f;
+		const float maxPosDiff = 0.35f;
 		if (dot(positionDiff,positionDiff) < maxPosDiff*maxPosDiff) {
 			positionDiffValid = true;
 		}
@@ -296,18 +311,18 @@ void main()
 		}
 
 		// compare albedo change
-		vec3 oldAlbedo = texelFetch(PreviousFrameImages[PREVIOUSFRAME_ALBEDO], ivec2(oldCoords), 0).xyz;
-		vec3 albedoDiff = gbuf_albedo - oldAlbedo;
-		if (dot(albedoDiff, albedoDiff) < 0.05f) {
-			albedoDiffValid = true;
-		}
+//		vec3 oldAlbedo = texelFetch(PreviousFrameImages[PREVIOUSFRAME_ALBEDO], ivec2(oldCoords), 0).xyz;
+//		vec3 albedoDiff = gbuf_albedo - oldAlbedo;
+//		if (dot(albedoDiff, albedoDiff) < 0.05f) {
+//			albedoDiffValid = true;
+//		}
 	}
 
 	// =========================================================================================
 	// TEMPORAL REUSE
-	if(true)
+	if(false)
 	{
-	bool validForTemporalReuse = positionDiffValid && normalDiffValid && albedoDiffValid;
+	bool validForTemporalReuse = positionDiffValid && normalDiffValid;
 	if(validForTemporalReuse)
 	{
 		uvec2 prevFragCoords = uvec2(oldCoords - vec2(0.5));
@@ -315,14 +330,18 @@ void main()
 
 		// clamp the number of samples
 		prevRes.numStreamSamples = min(
-			prevRes.numStreamSamples, 1000
+			prevRes.numStreamSamples, 50
 		);
 		 
 		// this is a reevluation of the light influence from previous samples.
 
 		float pHat[RESERVOIR_SIZE];
 		for (int i = 0; i < RESERVOIR_SIZE; ++i) {
-			TriLight light = triLights.triLights[prevRes.samples[i].lightIndex];
+			uint lightIndex = prevRes.samples[i].lightIndex;
+			if( lightIndex == RESTIR_LIGHT_INDEX_INVALID )
+				continue;
+
+			TriLight light = triLights.triLights[lightIndex];
 			MaterialBufferObject material = GetMaterialOrFallback(light.materialIndex);
 			float lightSampleLum = luminance(material.EmissiveFactor);
 
@@ -341,18 +360,20 @@ void main()
 	  
 	// =========================================================================================
 	// SPATIAL REUSE
-	//Reservoir spatialReservoir = newReservoir();
+	activatePrintf = false;
 	if(true)
 	{
 		uint numNeighbours = RestirConfig.SpatialNeighbors;
-		numNeighbours = 1;
+		numNeighbours = 10;
 		for(int i = 0; i < numNeighbours; i++)
 		{
 			ivec2 randNeighbor = ivec2(0, 0);
-		
+			
+			randomSeed++;
 			float angle = lcgFloat(randomSeed) * 2.0 * PI;
 			float spatialRadius = RestirConfig.SpatialRadius;
-			spatialRadius = 2.0f;
+			spatialRadius = 3.0f;
+			randomSeed++;
 			float radius = sqrt(lcgFloat(randomSeed)) * spatialRadius;
 
 			ivec2 randNeighborOffset = ivec2(round(cos(angle) * radius), round(sin(angle) * radius));
@@ -378,11 +399,18 @@ void main()
 
 			// Discard over biased neighbors
 			vec3 neighborPos = texelFetch(PreviousFrameImages[PREVIOUSFRAME_POS], ivec2(randNeighbor), 0).xyz;
+
+			if(neighborPos.x == 0 && neighborPos.y == 0 && neighborPos.z == 0)
+			{
+				// invalid position
+				continue;
+			}
+
 			vec3 neighborNor = texelFetch(PreviousFrameImages[PREVIOUSFRAME_NORMAL], ivec2(randNeighbor), 0).xyz;
 
 			vec3 posDiff = neighborPos - gbuf_pos;
 			float spatialThreshold = RestirConfig.SpatialPosThreshold;
-			spatialThreshold = 0.1;
+			spatialThreshold = 0.5;
 			float posDiffMaxSquared = spatialThreshold * spatialThreshold;
 
 			float spatialNormalThreshold = RestirConfig.SpatialNormalThreshold;
@@ -396,9 +424,9 @@ void main()
 
 			Reservoir randRes = prevFrameReservoirs.prevFrameReservoirs[randIndex];
 
-//			randRes.numStreamSamples = min(  
-//				randRes.numStreamSamples,  100
-//			);
+			randRes.numStreamSamples = min(  
+				randRes.numStreamSamples,  50
+			);
 
 			float newPHats[RESERVOIR_SIZE];
 			for (int j = 0; j < RESERVOIR_SIZE; ++j) {
@@ -406,20 +434,32 @@ void main()
 //					worldPos, randRes.samples[j].position_emissionLum.xyz, uniforms.cameraPos.xyz,
 //					normal, randRes.samples[j].normal.xyz, randRes.samples[j].normal.w > 0.5f,
 //					albedoLum, randRes.samples[j].position_emissionLum.w, roughnessMetallic.x, roughnessMetallic.y);
-			
-				TriLight light = triLights.triLights[randRes.samples[j].lightIndex];
+				uint lightIndex = randRes.samples[j].lightIndex;
+				if( lightIndex == RESTIR_LIGHT_INDEX_INVALID )
+					continue;
+
+				TriLight light = triLights.triLights[lightIndex];
 				MaterialBufferObject material = GetMaterialOrFallback(light.materialIndex);
 				float lightSampleLum = luminance(material.EmissiveFactor);
 
-				newPHats[i] = evaluatePHat(
+				newPHats[j] = evaluatePHat(
 					gbuf_pos, randRes.samples[j].position_emissionLum.xyz, cameraPos,
 					gbuf_normal, randRes.samples[j].normal.xyz, randRes.samples[j].normal.w > 0.5f,
 					albedoLum, lightSampleLum, surfaceMaterial.RoughnessFactor, surfaceMaterial.MetallicFactor
 				);
 				//newPHats[j] = 1.0f;
 			}
-
-			combineReservoirs(res, randRes, newPHats, randomSeed, activatePrintf);
+			// fix spatial reproj! -> in pillar scene, black circles dominate.
+			// in emissive spheres scene, there is no difference to without temp reproj
+			if(pixelCoord.x == t.x && pixelCoord.y == t.y)
+			{
+				//debugPrintfEXT("before: %f sumweights %f w, %d num Samples, %f newPHats, %f oldPhat, %d light index \n", res.samples[0].sumWeights, res.samples[0].w, res.numStreamSamples, newPHats[0], res.samples[0].pHat, res.samples[0].lightIndex);
+			}
+			combineReservoirs(res, randRes, newPHats, randomSeed, false);
+			if(pixelCoord.x == t.x && pixelCoord.y == t.y)
+			{
+				//debugPrintfEXT("after: %f sumweights %f w, %d num Samples, %f newPHats, %f oldPhat, %d light index \n", res.samples[0].sumWeights, res.samples[0].w, res.numStreamSamples, newPHats[0], res.samples[0].pHat, res.samples[0].lightIndex);
+			}
 		}
 
 		
@@ -436,37 +476,54 @@ void main()
 		vec3 origin = gbuf_pos;
 		CorrectOrigin(origin, gbuf_normal);
 		
-		shadowed = testVisibility(origin, res.samples[i].position_emissionLum.xyz);
-		if (shadowed)
-		{
+		bool shadowed = testVisibility(origin, res.samples[i].position_emissionLum.xyz);
+		if(pixelCoord.x == t.x && pixelCoord.y == t.y)
+			{
+				//debugPrintfEXT("%d i, light %d, lightpos %v3f, gbuf %v3f , %f pHat \n", i, res.samples[i].lightIndex,res.samples[i].position_emissionLum.xyz, gbuf_pos, res.samples[i].pHat);
+			}
+		if (shadowed) { 
 			res.samples[i].w = 0.0f;
 			res.samples[i].sumWeights = 0.0f;
-			res.samples[i].pHat = 0.0f;
-			//combineReservoirs(res, spatialReservoir, newPHats, randomSeed, activatePrintf);
-		}
-		else
-		{
-
+			res.samples[i].pHat = 0; 
 		}
 	}
-
 
 	// =========================================================================================
 	// WRITE BACK RESERVOIRS
 	uint reservoirIndex = pixelCoord.y * RestirConfig.ScreenSize.x + pixelCoord.x;
 	reservoirs.reservoirs[reservoirIndex] = res;
 
-	//debugPrintfEXT("Brightness pHat %f , number of samples %d \n", res.samples[0].pHat, res.numStreamSamples);
 	vec4 finalColor;
 	{
 
 		// TODO: when adding first sample to reservoir, sample should always be added so light index cannot 
 		// be invalid
 		// evaluate light material
-		uint lightIndex = res.samples[0].lightIndex;
+		
+		vec3 lightEmissionColor = vec3(0);
+		float totalpHat = 0;
+		for (int i = 0; i < RESERVOIR_SIZE; i++) 
+		{
+			uint lightIndex = res.samples[i].lightIndex;
 
-		TriLight light = triLights.triLights[lightIndex];
-		MaterialBufferObject material22 = GetMaterialOrFallback(light.materialIndex);
+			TriLight light = triLights.triLights[lightIndex];
+			MaterialBufferObject lightMaterial = GetMaterialOrFallback(light.materialIndex);
+
+			lightEmissionColor += lightMaterial.EmissiveFactor;
+//			if(pixelCoord.x == t.x && pixelCoord.y == t.y)
+//				debugPrintfEXT("%v3f new color, %v3f added \n", lightEmissionColor, lightMaterial.EmissiveFactor);
+			
+			totalpHat += res.samples[i].pHat;
+		}
+		lightEmissionColor /= RESERVOIR_SIZE;
+		totalpHat /= RESERVOIR_SIZE;
+		
+//		uint lightIndex = res.samples[3].lightIndex;
+//		TriLight light = triLights.triLights[lightIndex];
+//		MaterialBufferObject lightMaterial = GetMaterialOrFallback(light.materialIndex);
+//		lightEmissionColor = lightMaterial.EmissiveFactor;
+//		if(pixelCoord.x == t.x && pixelCoord.y == t.y)
+//			debugPrintfEXT("%v3f color \n", lightEmissionColor);
 		
 		// ok what the fuck is going on. :')
 		//finalColor = vec4(gbuf_albedo * vec3(res.samples[0].pHat) + surfaceMaterial.EmissiveFactor, 1.0f);
@@ -482,31 +539,33 @@ void main()
 		}
 		else // surface is not emissive => light surface
 		{
-			finalColor = vec4( gbuf_albedo * vec3(res.samples[0].pHat) , 1.0f);
-			finalColor *= 100; // increase lighting power
+				
+			finalColor = vec4( gbuf_albedo * vec3(totalpHat) , 1.0f);
+			finalColor *= 1000; // increase lighting power
 		}
 		
 		// no additional lighting on surfaces that are emissive -> that looks kinda bad.
 		if(dot(surfaceMaterial.EmissiveFactor, surfaceMaterial.EmissiveFactor) <= 0)
-			finalColor *=  vec4(material22.EmissiveFactor ,1);
+			finalColor *=  vec4(lightEmissionColor, 1);
 	}
 
-//	if(!positionDiffValid)
+	imageStore(ImageOutput, ivec2(pixelCoord), vec4(finalColor));
+
+//	if(pixelCoord.x == t.x && pixelCoord.y == t.y)
 //	{
-//		//imageStore(ImageOutput, ivec2(pixelCoord), vec4(1,0,0,1));
+//		//debugPrintfEXT("%d mat Index %f roughness, %f metallic (%f,%f,%f) EmissiveFactor \n", gbuf_materialIndex, surfaceMaterial.RoughnessFactor, surfaceMaterial.MetallicFactor,
+//		//surfaceMaterial.EmissiveFactor.x, surfaceMaterial.EmissiveFactor.y, surfaceMaterial.EmissiveFactor.z );
+//		imageStore(ImageOutput, t, vec4(1,0,1,1));
+//	}
+//	else if(!positionDiffValid)
+//	{
+//		imageStore(ImageOutput, ivec2(pixelCoord), vec4(1,0,0,1));
 //	}
 //	else
 //	{
 //		imageStore(ImageOutput, ivec2(pixelCoord), vec4(finalColor));
 //	}
-	imageStore(ImageOutput, ivec2(pixelCoord), vec4(finalColor));
 
-	if(pixelCoord.x == t.x && pixelCoord.y == t.y)
-	{
-		debugPrintfEXT("%d mat Index %f roughness, %f metallic (%f,%f,%f) EmissiveFactor \n", gbuf_materialIndex, surfaceMaterial.RoughnessFactor, surfaceMaterial.MetallicFactor,
-		surfaceMaterial.EmissiveFactor.x, surfaceMaterial.EmissiveFactor.y, surfaceMaterial.EmissiveFactor.z );
-		imageStore(ImageOutput, t, vec4(1,0,1,1));
-	}
 //	else
 //	{
 //		if(!positionDiffValid)
