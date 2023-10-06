@@ -5,9 +5,9 @@ Based on https://github.com/lukedan/ReSTIR-Vulkan
 
 - **Vulkan SDK 1.2+** Follow install instructions on [https://vulkan.lunarg.com/sdk/home](https://vulkan.lunarg.com/sdk/home)
 
-## Cloning
+# Setup
 
-Requires a submodule (`--recursive` clone option or run `submodule init` after cloning)
 ```
-git clone --recursive https://github.com/Vulkemp/foray_sponza_sample
+git clone --recursive https://github.com/Vulkemp/foray_restir.git
 ```
+Also clones the submodule `foray` (required).
