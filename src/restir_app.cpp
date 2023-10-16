@@ -77,20 +77,18 @@ void RestirProject::loadScene()
     };
 
     // clang-format off
-    //"../data/scenes/sponza/glTF/Sponza.gltf",
     std::vector<ModelLoad> modelLoads({
-        // Bistro exterior
         {
-            
-            .ModelPath = std::string(CWD_OVERRIDE_PATH) + "\\..\\data\\scenes\\bistro_exterior\\BistroExterior.gltf",
+            //.ModelPath = std::string(CWD_OVERRIDE_PATH) + "\\..\\data\\scenes\\bistro_exterior\\BistroExterior.gltf",
             //.ModelPath = std::string(CWD_OVERRIDE_PATH) + "\\..\\data\\scenes\\pillar_room\\pillar_room.gltf",
-            //.ModelPath = std::string(CWD_OVERRIDE_PATH) + "\\..\\data\\scenes\\emissive_spheres\\emissive_spheres.gltf",
+            .ModelPath = std::string(CWD_OVERRIDE_PATH) + "\\..\\data\\scenes\\emissive_spheres\\emissive_spheres.gltf",
             .ModelConverterOptions = {
                 .FlipY = false,
             },
         },
+
         // Light cube
-      /*  {
+        /*{
             .ModelPath = "../data/scenes/cube/cube2.gltf",
         }*/
     });
