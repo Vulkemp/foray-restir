@@ -23,6 +23,7 @@ The repository contains three main scenes:
 * emissive spheres
 * pillar room 
 * bistro exterior
+
 A scene can be chosen in the `restir_app.cpp` file by editing `void RestirProject::loadScene()` method. Simply comment in the desired scene path.
 
 ## Bistro Exterior
