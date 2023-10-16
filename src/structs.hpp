@@ -13,8 +13,11 @@ namespace shader {
         vec4  p1;
         vec4  p2;
         vec4  p3;
+        vec4  normal;
         uint  materialIndex;
-        float normalArea;
+        uint  reserved1;
+        uint  reserved2;
+        uint  reserved3;
     };
 
 #ifdef __cplusplus

@@ -12,7 +12,6 @@
 #include "../../../foray/src/shaders/rt_common/geometrymetabuffer.glsl" // GeometryMeta information
 #include "../../../foray/src/shaders/rt_common/geobuffers.glsl" // Vertex and index buffer aswell as accessor methods
 #include "../../../foray/src/shaders/common/normaltbn.glsl" // Normal calculation in tangent space
-#include "../../../foray/src/shaders/pbr/specularbrdf.glsl"
 
 // Declare hitpayloads
 

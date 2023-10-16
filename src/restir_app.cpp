@@ -1,32 +1,22 @@
 #include "restir_app.hpp"
-#include <bench/foray_hostbenchmark.hpp>
-#include <core/foray_managedimage.hpp>
-#include <gltf/foray_modelconverter.hpp>
 #include <imgui/imgui.h>
-#include <scene/components/foray_camera.hpp>
-#include <scene/components/foray_freecameracontroller.hpp>
-#include <scene/components/foray_meshinstance.hpp>
-#include <scene/foray_mesh.hpp>
-#include <scene/globalcomponents/foray_cameramanager.hpp>
-#include <scene/globalcomponents/foray_tlasmanager.hpp>
+
+#include <scene/foray_geo.hpp>
 #include <util/foray_imageloader.hpp>
-#include <vulkan/vulkan.h>
+#include <util/foray_pipelinebuilder.hpp>
+
+#include <scene/components/foray_node_components.hpp>
+#include <scene/foray_mesh.hpp>
+#include <scene/globalcomponents/foray_materialmanager.hpp>
+#include <scene/globalcomponents/foray_animationmanager.hpp>
+
 
 #include "structs.hpp"
 
-void RestirProject::BeforeInstanceCreate(vkb::InstanceBuilder& instanceBuilder)
-{
-    /* instanceBuilder.add_validation_feature_enable(VK_VALIDATION_FEATURE_ENABLE_DEBUG_PRINTF_EXT);
-    instanceBuilder.enable_extension(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
-    instanceBuilder.enable_extension(VK_EXT_DEBUG_REPORT_EXTENSION_NAME);*/
-}
 
-void RestirProject::BeforeDeviceBuilding(vkb::DeviceBuilder& deviceBuilder) {}
+//#define USE_PRINTF
 
-void RestirProject::BeforePhysicalDeviceSelection(vkb::PhysicalDeviceSelector& pds)
-{
-    //pds.add_required_extension(VK_KHR_SHADER_NON_SEMANTIC_INFO_EXTENSION_NAME);
-}
+std::vector<std::string> g_ShaderPrintfLog;
 
 // And this is the callback that the validator will call
 VkBool32 myDebugCallback(VkDebugReportFlagsEXT      flags,
@@ -38,63 +28,44 @@ VkBool32 myDebugCallback(VkDebugReportFlagsEXT      flags,
                          const char*                pMessage,
                          void*                      pUserData)
 {
-    if(flags & VK_DEBUG_REPORT_ERROR_BIT_EXT)
-    {
-        printf("debugPrintfEXT: %s", pMessage);
-    }
 
+    printf("debugPrintfEXT: %s", pMessage);
+    g_ShaderPrintfLog.push_back(pMessage);
+    printf("num %d", (int)g_ShaderPrintfLog.size());
     return false;
 }
 
-void RestirProject::Init()
+void RestirProject::ApiBeforeInit()
 {
-    VkDebugReportCallbackEXT debugCallbackHandle;
+#ifdef USE_PRINTF
+    mInstance.SetEnableDebugReport(true);
+    mInstance.SetDebugReportFunc(&myDebugCallback);
+#else
 
-    //// Populate the VkDebugReportCallbackCreateInfoEXT
-    //VkDebugReportCallbackCreateInfoEXT ci = {};
-    //ci.sType                              = VK_STRUCTURE_TYPE_DEBUG_REPORT_CALLBACK_CREATE_INFO_EXT;
-    //ci.pfnCallback                        = myDebugCallback;
-    //ci.flags                              = VK_DEBUG_REPORT_INFORMATION_BIT_EXT;
-    //ci.pUserData                          = nullptr;
+    mInstance.SetEnableDebugReport(false);
+#endif
 
-    //PFN_vkCreateDebugReportCallbackEXT pfn_vkCreateDebugReportCallbackEXT =
-    //    reinterpret_cast<PFN_vkCreateDebugReportCallbackEXT>(vkGetDeviceProcAddr(mContext.Device, "vkCreateDebugReportCallbackEXT"));
-    //
-    //PFN_vkCreateDebugReportCallbackEXT CreateDebugReportCallback = VK_NULL_HANDLE;
-    //CreateDebugReportCallback                                    = (PFN_vkCreateDebugReportCallbackEXT)vkGetInstanceProcAddr(mContext.Instance, "vkCreateDebugReportCallbackEXT");
+    // performance
+    mInstance.SetEnableDebugLayersAndCallbacks(false);
 
-    //// Create the callback handle
-    //CreateDebugReportCallback(mContext.Instance, &ci, nullptr, &debugCallbackHandle);
+    // allow drawing mesh in polygon line mode
+    mDevice.GetPhysicalDeviceFeatures().fillModeNonSolid = true;
+}
 
-
+void RestirProject::ApiInit()
+{
+    //mRenderLoop.GetFrameTiming().DisableFpsLimit();
     foray::logger()->set_level(spdlog::level::debug);
     LoadEnvironmentMap();
     GenerateNoiseSource();
     loadScene();
-    ConfigureStages();
     CollectEmissiveTriangles();
+    UploadLightsToGpu();
+    ConfigureStages();
 }
 
-void RestirProject::Update(float delta)
+void RestirProject::ApiOnEvent(const foray::osi::Event* event)
 {
-    DefaultAppBase::Update(delta);
-    if(mOutputChanged)
-    {
-        ApplyOutput();
-        mOutputChanged = false;
-    }
-}
-
-void RestirProject::OnEvent(const foray::Event* event)
-{
-    DefaultAppBase::OnEvent(event);
-    auto buttonInput   = dynamic_cast<const foray::EventInputBinary*>(event);
-    auto axisInput     = dynamic_cast<const foray::EventInputAnalogue*>(event);
-    auto windowResized = dynamic_cast<const foray::EventWindowResized*>(event);
-    if(windowResized)
-    {
-        spdlog::info("Window resized w {} h {}", windowResized->Current.Width, windowResized->Current.Height);
-    }
     mScene->InvokeOnEvent(event);
 
     // process events for imgui
@@ -103,28 +74,49 @@ void RestirProject::OnEvent(const foray::Event* event)
 
 void RestirProject::loadScene()
 {
-    std::vector<std::string> scenePaths({
-        "../data/scenes/Sponza/glTF/Sponza.gltf",
-        "../data/scenes/cube/cube.gltf",
+    struct ModelLoad
+    {
+        std::string                        ModelPath;
+        foray::gltf::ModelConverterOptions ModelConverterOptions;
+    };
+
+    // clang-format off
+    //"../data/scenes/sponza/glTF/Sponza.gltf",
+    std::vector<ModelLoad> modelLoads({
+        // Bistro exterior
+        {
+            //.ModelPath = "E:/gltf/BistroExterior_out/BistroExterior.gltf",
+            //.ModelPath = "E:\\Programming\\foray_restir\\data\\gltf\\testbox\\pillar_room.gltf",
+            .ModelPath = "E:\\Programming\\foray_restir\\data\\gltf\\testbox\\scene_emissive2.gltf",
+            //.ModelPath = "../data/scenes/sponza/glTF/Sponza.gltf", s
+            .ModelConverterOptions = {
+                .FlipY = false,
+            },
+        },
+        // Light cube
+      /*  {
+            .ModelPath = "../data/scenes/cube/cube2.gltf",
+        }*/
     });
+    // clang-format on
 
     mScene = std::make_unique<foray::scene::Scene>(&mContext);
     foray::gltf::ModelConverter converter(mScene.get());
-    for(const auto& path : scenePaths)
+    for(const auto& modelLoad : modelLoads)
     {
-        converter.LoadGltfModel(foray::osi::MakeRelativePath(path));
+        converter.LoadGltfModel(foray::osi::MakeRelativePath(modelLoad.ModelPath), &mContext, modelLoad.ModelConverterOptions);
     }
-    mScene->MakeComponent<foray::scene::TlasManager>(&mContext)->CreateOrUpdate();
 
-    auto cameraNode = mScene->MakeNode();
+    mScene->UpdateTlasManager();
+    mScene->UseDefaultCamera(true);
 
-    cameraNode->MakeComponent<foray::scene::Camera>()->InitDefault();
-    cameraNode->MakeComponent<foray::scene::FreeCameraController>();
-    mScene->GetComponent<foray::scene::CameraManager>()->RefreshCameraList();
+    auto ptr = mScene->GetComponent<foray::scene::gcomp::AnimationManager>();
+    if(ptr)
+        ptr->GetPlaybackConfig().PlaybackSpeed = 0;
 
-    for(int32_t i = 0; i < scenePaths.size(); i++)
+    for(int32_t i = 0; i < modelLoads.size(); i++)
     {
-        const auto& path = scenePaths[i];
+        const auto& path = modelLoads[i].ModelPath;
         const auto& log  = converter.GetBenchmark().GetLogs()[i];
         foray::logger()->info("Model Load \"{}\":\n{}", path, log.PrintPretty());
     }
@@ -148,17 +140,25 @@ void RestirProject::LoadEnvironmentMap()
         return;
     }
 
-    VkExtent3D ext3D{
-        .width  = imageLoader.GetInfo().Extent.width,
-        .height = imageLoader.GetInfo().Extent.height,
-        .depth  = 1,
-    };
-
-    foray::core::ManagedImage::CreateInfo ci("Environment map", VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, hdrVkFormat,
-                                             ext3D);
+    foray::core::ManagedImage::CreateInfo ci(VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, hdrVkFormat,
+                                             imageLoader.GetInfo().Extent, "Environment map");
 
     imageLoader.InitManagedImage(&mContext, &mSphericalEnvMap, ci);
     imageLoader.Destroy();
+
+    VkSamplerCreateInfo samplerCi{.sType                   = VkStructureType::VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+                                  .magFilter               = VkFilter::VK_FILTER_LINEAR,
+                                  .minFilter               = VkFilter::VK_FILTER_LINEAR,
+                                  .addressModeU            = VkSamplerAddressMode::VK_SAMPLER_ADDRESS_MODE_REPEAT,
+                                  .addressModeV            = VkSamplerAddressMode::VK_SAMPLER_ADDRESS_MODE_REPEAT,
+                                  .addressModeW            = VkSamplerAddressMode::VK_SAMPLER_ADDRESS_MODE_REPEAT,
+                                  .anisotropyEnable        = VK_FALSE,
+                                  .compareEnable           = VK_FALSE,
+                                  .minLod                  = 0,
+                                  .maxLod                  = 0,
+                                  .unnormalizedCoordinates = VK_FALSE};
+
+    mSphericalEnvMapSampler.Init(&mContext, &mSphericalEnvMap, samplerCi);
 }
 
 void RestirProject::GenerateNoiseSource()
@@ -174,55 +174,79 @@ void RestirProject::CollectEmissiveTriangles()
 {
     // find cube mesh vertices and indices
     std::vector<foray::scene::Node*> nodesWithMeshInstances{};
-    mScene->FindNodesWithComponent<foray::scene::MeshInstance>(nodesWithMeshInstances);
+    mScene->FindNodesWithComponent<foray::scene::ncomp::MeshInstance>(nodesWithMeshInstances);
     std::vector<foray::scene::Vertex>* vertices;
     std::vector<uint32_t>*             indices;
-    uint32_t                           materialIndex;
+    int32_t                            materialIndex;
+
+    foray::scene::gcomp::MaterialManager* materialManager = mScene->GetComponent<foray::scene::gcomp::MaterialManager>();
+    std::vector<foray::scene::Material>&  materials       = materialManager->GetVector();
+
     for(foray::scene::Node* node : nodesWithMeshInstances)
     {
-        foray::scene::MeshInstance* meshInstance = node->GetComponent<foray::scene::MeshInstance>();
-        foray::scene::Mesh*         mesh         = meshInstance->GetMesh();
-        auto                        primitives   = mesh->GetPrimitives();
-        foray::logger()->info("Primitive size: {}", primitives.size());
+        foray::scene::ncomp::MeshInstance* meshInstance = node->GetComponent<foray::scene::ncomp::MeshInstance>();
+        foray::scene::Mesh*                mesh         = meshInstance->GetMesh();
+        auto                               primitives   = mesh->GetPrimitives();
 
-        // our cube scene only has 1 primitve
-        if(primitives.size() > 1)
-            continue;
+        for(auto& primitve : primitives)
+        {
 
-        vertices      = &primitives[0].Vertices;
-        indices       = &primitives[0].Indices;
-        materialIndex = primitives[0].MaterialIndex;
-    }
+            materialIndex = primitve.MaterialIndex;
+            if(materialIndex < 0)
+            {
+                // negative material index indicates fallback material
+                continue;
+            }
 
-    // create triangles from vertices & indices
-    mTriangleLights.resize(indices->size() / 3);
-    for(size_t i = 0; i < indices->size(); i += 3)
-    {
-        // collect vertices
-        glm::vec3 p1_vec3 = vertices->at(indices->at(i)).Pos;
-        glm::vec3 p2_vec3 = vertices->at(indices->at(i + 1)).Pos;
-        glm::vec3 p3_vec3 = vertices->at(indices->at(i + 2)).Pos;
+            foray::scene::Material& material = materials[materialIndex];
 
-        // TODO: world matrix of primitive has to be considered for triangle position.
-        shader::TriLight& triLight = mTriangleLights[i / 3];
-        triLight.p1                = glm::vec4(p1_vec3, 1.0);
-        triLight.p2                = glm::vec4(p2_vec3, 1.0);
-        triLight.p3                = glm::vec4(p3_vec3, 1.0);
+            // if all components of emissive factor are 0, we skip primitive
+            if(glm::all(glm::equal(material.EmissiveFactor, glm::vec3(0))))
+            {
+                foray::logger()->info("Discarded because emissive factor was 0");
+                continue;
+            }
 
-        // material index for shader lookup
-        triLight.materialIndex = materialIndex;
+            vertices = &(primitve.Vertices);
+            indices  = &(primitve.Indices);
 
-        // compute triangle area
-        glm::vec3 normal    = glm::cross(p2_vec3 - p1_vec3, p3_vec3 - p1_vec3);
-        triLight.normalArea = normal.length();
+            // get geometry world transform
+            foray::scene::ncomp::Transform* transform    = node->GetTransform();
+            glm::mat4                       transformMat = transform->GetGlobalMatrix();
+
+            // create triangles from vertices & indices
+            uint32_t baseCount    = mTriangleLights.size();
+            uint32_t numTriangles = (indices->size() / 3);
+            mTriangleLights.resize(baseCount + numTriangles);
+            for(size_t i = 0; i < indices->size(); i += 3)
+            {
+                // collect vertices
+                glm::vec3 p1_vec3 = vertices->at(indices->at(i)).Pos;
+                glm::vec3 p2_vec3 = vertices->at(indices->at(i + 1)).Pos;
+                glm::vec3 p3_vec3 = vertices->at(indices->at(i + 2)).Pos;
+
+                // TODO: world matrix of primitive has to be considered for triangle position.
+                shader::TriLight& triLight = mTriangleLights[baseCount + (i / 3)];
+                triLight.p1                = transformMat * glm::vec4(p1_vec3, 1.0);
+                triLight.p2                = transformMat * glm::vec4(p2_vec3, 1.0);
+                triLight.p3                = transformMat * glm::vec4(p3_vec3, 1.0);
+
+                // material index for shader lookup
+                triLight.materialIndex = materialIndex;
+
+                // compute triangle area
+                glm::vec3 normal            = vertices->at(indices->at(i)).Normal + vertices->at(indices->at(i + 1)).Normal + vertices->at(indices->at(i + 2)).Normal;
+                glm::vec3 normal_normalized = glm::normalize(normal);
+                triLight.normal             = glm::vec4(normal_normalized.x, normal_normalized.y, normal_normalized.z, normal.length());
+                //foray::logger()->debug("TriLightNormal: {},{},{},{}", triLight.normal.x, triLight.normal.y, triLight.normal.z, triLight.normal.w);
+            }
+        }
     }
 }
 
 void RestirProject::UploadLightsToGpu()
 {
-    foray::core::ManagedBuffer mTriangleLightsBuffer;
-
-    VkBufferUsageFlags       bufferUsage    = VkBufferUsageFlagBits::VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+    VkBufferUsageFlags       bufferUsage    = VkBufferUsageFlagBits::VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
     VkDeviceSize             bufferSize     = mTriangleLights.size() * sizeof(shader::TriLight);
     VmaMemoryUsage           bufferMemUsage = VmaMemoryUsage::VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
     VmaAllocationCreateFlags allocFlags     = 0;
@@ -230,31 +254,37 @@ void RestirProject::UploadLightsToGpu()
     mTriangleLightsBuffer.WriteDataDeviceLocal(mTriangleLights.data(), bufferSize);
 }
 
-void RestirProject::Destroy()
+void RestirProject::ApiDestroy()
 {
-    vkDeviceWaitIdle(mContext.Device);
     mNoiseSource.Destroy();
     mScene->Destroy();
     mScene = nullptr;
     mGbufferStage.Destroy();
     mImguiStage.Destroy();
     mRestirStage.Destroy();
+	mETMStage.Destroy();
     mSphericalEnvMap.Destroy();
-
-    DefaultAppBase::Destroy();
+    mTriangleLightsBuffer.Destroy();
 }
 
-void RestirProject::OnShadersRecompiled()
+void RestirProject::ApiOnShadersRecompiled(std::unordered_set<uint64_t>& recompiledShaderKeys)
 {
-    mGbufferStage.OnShadersRecompiled();
-    mRestirStage.OnShadersRecompiled();
+    //mGbufferStage.OnShadersRecompiled(recompiledShaderKeys);
+    //mRestirStage.OnShadersRecompiled(recompiledShaderKeys);
 }
 
 void RestirProject::PrepareImguiWindow()
 {
     mImguiStage.AddWindowDraw([this]() {
         ImGui::Begin("window");
-        ImGui::Text("FPS: %f", mFps);
+
+        foray::base::RenderLoop::FrameTimeAnalysis analysis = this->GetRenderLoop().AnalyseFrameTimes();
+        if(analysis.Count > 0)
+        {
+            ImGui::Text("FPS: avg: %f min: %f", 1.f / analysis.AvgFrameTime, 1.f / analysis.MaxFrameTime);
+        }
+
+        ImGui::Checkbox("Highlight emissive Triangles", &mHighlightEmissiveTriangles);
 
         const char* current = mCurrentOutput.data();
         if(ImGui::BeginCombo("Output", current))
@@ -278,13 +308,16 @@ void RestirProject::PrepareImguiWindow()
             ImGui::EndCombo();
         }
 
-#ifdef ENABLE_GBUFFER_BENCH
-        if(mDisplayedLog.Timestamps.size() > 0 && ImGui::CollapsingHeader("GBuffer Benchmark"))
-        {
-            mDisplayedLog.PrintImGui();
-        }
-#endif  // ENABLE_GBUFFER_BENCH
+        ImGui::End();
 
+        ImGui::Begin("printf trace");
+        ImGui::Text("%d", (int)g_ShaderPrintfLog.size());
+        ImGui::BeginChild("Scrolling");
+        for(int n = 0; n < g_ShaderPrintfLog.size(); n++)
+        {
+            ImGui::Text("%s", g_ShaderPrintfLog[n].c_str());
+        }
+        ImGui::EndChild();
         ImGui::End();
     });
 }
@@ -292,24 +325,39 @@ void RestirProject::PrepareImguiWindow()
 void RestirProject::ConfigureStages()
 {
     mGbufferStage.Init(&mContext, mScene.get());
-    auto albedoImage = mGbufferStage.GetColorAttachmentByName(foray::stages::GBufferStage::Albedo);
-    auto normalImage = mGbufferStage.GetColorAttachmentByName(foray::stages::GBufferStage::WorldspaceNormal);
+    mRestirStage.Init(&mContext, mScene.get(), &mSphericalEnvMapSampler, &mNoiseSource.GetImage(), &mGbufferStage, &mImguiStage, this);
+    mRestirStage.SetNumberOfTriangleLights(mTriangleLights.size());
 
-    mRestirStage.Init(&mContext, mScene.get(), &mSphericalEnvMap, &mNoiseSource.GetImage(), &mGbufferStage);
-    auto rtImage = mRestirStage.GetColorAttachmentByName(foray::stages::RaytracingStage::RaytracingRenderTargetName);
-
+    auto depthImage = mGbufferStage.GetImageOutput(mGbufferStage.DepthOutputName);
+    auto colorImage = mGbufferStage.GetImageOutput(mGbufferStage.AlbedoOutputName);
+    auto rtOutput   = mRestirStage.GetImageOutput(mRestirStage.OutputName);
+    mETMStage.Init(&mContext, &mTriangleLights, depthImage, rtOutput, mScene.get());
     UpdateOutputs();
 
-    mImguiStage.Init(&mContext, mOutputs[mCurrentOutput]);
+    mImguiStage.InitForSwapchain(&mContext);
     PrepareImguiWindow();
+    mRestirStage.PrepareImguiWindow();
 
     // Init copy stage
     mImageToSwapchainStage.Init(&mContext, mOutputs[mCurrentOutput]);
+    mImageToSwapchainStage.SetFlipY(true);
+
+    RegisterRenderStage(&mGbufferStage);
+    RegisterRenderStage(&mRestirStage);
+    RegisterRenderStage(&mETMStage);
+    RegisterRenderStage(&mImguiStage);
+    RegisterRenderStage(&mImageToSwapchainStage);
 }
 
-void RestirProject::RecordCommandBuffer(foray::base::FrameRenderInfo& renderInfo)
+void RestirProject::ApiRender(foray::base::FrameRenderInfo& renderInfo)
 {
-    foray::core::DeviceCommandBuffer& commandBuffer = renderInfo.GetPrimaryCommandBuffer();
+    if(mOutputChanged)
+    {
+        ApplyOutput();
+        mOutputChanged = false;
+    }
+
+    foray::core::DeviceSyncCommandBuffer& commandBuffer = renderInfo.GetPrimaryCommandBuffer();
     commandBuffer.Begin();
 
     mScene->Update(renderInfo, commandBuffer);
@@ -318,65 +366,53 @@ void RestirProject::RecordCommandBuffer(foray::base::FrameRenderInfo& renderInfo
     // after gbuffer stage, transform depth from attachment optimal to read optimal
     {
         foray::core::ImageLayoutCache::Barrier barrier;
-        barrier.SrcAccessMask = 0;
-        barrier.DstAccessMask = 0;
-        barrier.NewLayout     = VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL;
+        barrier.SrcAccessMask               = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+        barrier.DstAccessMask               = VK_ACCESS_SHADER_READ_BIT;
+        barrier.NewLayout                   = VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL;
         barrier.SubresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
 
-        renderInfo.GetImageLayoutCache().CmdBarrier(commandBuffer, mGbufferStage.GetDepthBuffer(), barrier, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
-                                                    VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR);
+        renderInfo.GetImageLayoutCache().CmdBarrier(commandBuffer, mGbufferStage.GetImageOutput(foray::stages::GBufferStage::DepthOutputName), barrier,
+                                                    VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR);
     }
 
     mRestirStage.RecordFrame(commandBuffer, renderInfo);
 
-    // draw imgui windows
-    mImguiStage.RecordFrame(commandBuffer, renderInfo);
+    if(mHighlightEmissiveTriangles)
+        mETMStage.RecordFrame(commandBuffer, renderInfo);
 
     // copy final image to swapchain
     mImageToSwapchainStage.RecordFrame(commandBuffer, renderInfo);
 
+    // draw imgui windows
+    mImguiStage.RecordFrame(commandBuffer, renderInfo);
+
     renderInfo.GetInFlightFrame()->PrepareSwapchainImageForPresent(commandBuffer, renderInfo.GetImageLayoutCache());
-    commandBuffer.Submit(mContext.QueueGraphics);
+    commandBuffer.Submit();
 }
 
-void RestirProject::QueryResultsAvailable(uint64_t frameIndex)
-{
-#ifdef ENABLE_GBUFFER_BENCH
-    mGbufferStage.GetBenchmark().LogQueryResults(frameIndex);
-    mDisplayedLog = mGbufferStage.GetBenchmark().GetLogs().back();
-#endif  // ENABLE_GBUFFER_BENCH
-}
-
-void RestirProject::OnResized(VkExtent2D size)
+void RestirProject::ApiOnResized(VkExtent2D size)
 {
     mScene->InvokeOnResized(size);
-    mGbufferStage.OnResized(size);
-    auto albedoImage = mGbufferStage.GetColorAttachmentByName(foray::stages::GBufferStage::Albedo);
-    auto normalImage = mGbufferStage.GetColorAttachmentByName(foray::stages::GBufferStage::WorldspaceNormal);
-    mRestirStage.OnResized(size);
-    auto rtImage = mRestirStage.GetColorAttachmentByName(foray::stages::RaytracingStage::RaytracingRenderTargetName);
-
+    mGbufferStage.Resize(size);
+    mRestirStage.Resize(size);
     UpdateOutputs();
-
-    mImguiStage.OnResized(size, mOutputs[mCurrentOutput]);
-    mImageToSwapchainStage.OnResized(size, mOutputs[mCurrentOutput]);
+    mImguiStage.Resize(size);
+    mImageToSwapchainStage.Resize(size);
 }
 
 void lUpdateOutput(std::unordered_map<std::string_view, foray::core::ManagedImage*>& map, foray::stages::RenderStage& stage, const std::string_view name)
 {
-    map[name] = stage.GetColorAttachmentByName(name);
+    map[name] = stage.GetImageOutput(name);
 }
 
 void RestirProject::UpdateOutputs()
 {
     mOutputs.clear();
-    lUpdateOutput(mOutputs, mGbufferStage, foray::stages::GBufferStage::Albedo);
-    lUpdateOutput(mOutputs, mGbufferStage, foray::stages::GBufferStage::WorldspacePosition);
-    lUpdateOutput(mOutputs, mGbufferStage, foray::stages::GBufferStage::WorldspaceNormal);
-    lUpdateOutput(mOutputs, mGbufferStage, foray::stages::GBufferStage::MotionVector);
-    lUpdateOutput(mOutputs, mGbufferStage, foray::stages::GBufferStage::MaterialIndex);
-    lUpdateOutput(mOutputs, mGbufferStage, foray::stages::GBufferStage::MeshInstanceIndex);
-    lUpdateOutput(mOutputs, mRestirStage, foray::stages::RaytracingStage::RaytracingRenderTargetName);
+    lUpdateOutput(mOutputs, mGbufferStage, foray::stages::GBufferStage::AlbedoOutputName);
+    lUpdateOutput(mOutputs, mGbufferStage, foray::stages::GBufferStage::PositionOutputName);
+    lUpdateOutput(mOutputs, mGbufferStage, foray::stages::GBufferStage::NormalOutputName);
+    lUpdateOutput(mOutputs, mGbufferStage, foray::stages::GBufferStage::MaterialIdxOutputName);
+    lUpdateOutput(mOutputs, mRestirStage, foray::stages::DefaultRaytracingStageBase::OutputName);
 
     if(mCurrentOutput.size() == 0 || !mOutputs.contains(mCurrentOutput))
     {
@@ -393,8 +429,7 @@ void RestirProject::UpdateOutputs()
 
 void RestirProject::ApplyOutput()
 {
-    vkDeviceWaitIdle(mContext.Device);
+    vkDeviceWaitIdle(mContext.Device());
     auto output = mOutputs[mCurrentOutput];
-    mImguiStage.SetTargetImage(output);
-    mImageToSwapchainStage.SetTargetImage(output);
+    mImageToSwapchainStage.SetSrcImage(output);
 }

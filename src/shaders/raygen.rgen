@@ -3,8 +3,10 @@
 #extension GL_KHR_vulkan_glsl : enable // Vulkan-specific syntax
 #extension GL_GOOGLE_include_directive : enable // Include files
 #extension GL_EXT_ray_tracing : enable // Raytracing
-//#extension GL_EXT_debug_printf : enable
+#extension GL_EXT_debug_printf : enable
+#extension GL_EXT_nonuniform_qualifier : enable
 
+// fix resize
 // Include structs and bindings
 #ifndef includes
 #define includes
@@ -14,8 +16,24 @@
 #include "../../foray/src/shaders/rt_common/imageoutput.glsl"
 #include "../../foray/src/shaders/common/lcrng.glsl"
 #include "../../foray/src/shaders/common/noisetex.glsl"
-#include "../../foray/src/shaders/rt_common/tracerconfig.glsl"
+#include "../../foray/src/shaders/shading/constants.glsl"
+#include "common/materialbuffer.glsl"
 #endif
+
+float luminance(vec3 rgb)
+{
+    // Algorithm from Chapter 10 of Graphics Shaders.
+    const vec3 W = vec3(0.2125, 0.7154, 0.0721);
+    return dot(rgb, W);
+}
+
+layout(push_constant) uniform TracerConfigBlock
+{
+    /// @brief Per frame unique seed for random number generation
+    uint RngSeed;
+	uint DiscardPrevFrameReservoir;
+}
+TracerConfig;
 
 layout(binding = 11,  set = 0) readonly uniform RestirConfiguration
 {
@@ -33,67 +51,100 @@ layout(binding = 11,  set = 0) readonly uniform RestirConfiguration
     float  SpatialRadius;
     uint   Flags;
 	uint   NumTriLights;
+	uint   EnableTemporal;
+	uint   EnableSpatial;
 }
 RestirConfig;
 
-
-//# i nclude "../structs.hpp"
 struct TriLight
     {
         vec4  p1;
         vec4  p2;
         vec4  p3;
-        uint  materialIndex;
-        float normalArea;
+		vec4  normal;
+        int  materialIndex;
+		uint  reserved1;
+		uint  reserved2;
+		uint  reserved3;
     };
 #include "restir/restirUtils.glsl"
+#include "restir/brdf.glsl"
 
-layout(binding = 12,  set = 0) buffer Reservoirs{ Reservoir reservoirs[]; } reservoirs;
-layout(binding = 13,  set = 0) buffer PrevFrameReservoirs { Reservoir prevFrameReservoirs[]; } prevFrameReservoirs;
+layout(set = 1, binding = 0) buffer Reservoirs{ Reservoir reservoirs[]; } reservoirs;
+layout(set = 1, binding = 1) buffer PrevFrameReservoirs { Reservoir prevFrameReservoirs[]; } prevFrameReservoirs;
 
-#define ALBEDO 0
-#define WORLDNORMAL 1
-#define WORLDPOS 2
-#define MOTION 3
-#define DEPTH 4
-layout(set = 0, binding = 14) uniform sampler2D GBufferTextures[5];
-layout(set = 0, binding = 16) uniform sampler2D PreviousFrameImages[4];
-//layout(set = 0, binding = 16) buffer PrevFrameDepthBufferWrite{ float depth[]; } prevFrameDepthBufferWrite;
-//layout(set = 0, binding = 15) buffer TriLights{ TriLight triLights[]; } triLights;
+#define GBUFFER_ALBEDO 0
+#define GBUFFER_NORMAL 1
+#define GBUFFER_POS 2
+#define GBUFFER_MOTION 3
+#define GBUFFER_MATERIAL_INDEX 4
+layout(set = 0, binding = 14) uniform sampler2D GBufferTextures[];
+
+#define PREVIOUSFRAME_ALBEDO 0
+#define PREVIOUSFRAME_NORMAL 1
+#define PREVIOUSFRAME_POS 2
+layout(set = 0, binding = 15) uniform sampler2D PreviousFrameImages[];
+layout(std140, set = 0, binding = 16) buffer TriLights{ TriLight triLights[]; } triLights;
 
 // Declare hitpayloads
-
 #define HITPAYLOAD_OUT
 #include "../../foray/src/shaders/rt_common/payload.glsl"
+
+layout (location = 2) rayPayloadEXT bool isShadowed;
 
 vec3 pickPointOnTriangle(float r1, float r2, vec3 p1, vec3 p2, vec3 p3) {
 	float sqrt_r1 = sqrt(r1);
 	return (1.0 - sqrt_r1) * p1 + (sqrt_r1 * (1.0 - r2)) * p2 + (r2 * sqrt_r1) * p3;
 }
 
+bool testVisibility(vec3 p1, vec3 p2) {
+	float tMin = 0.01f;
+	vec3 dir = p2 - p1;
+
+	isShadowed = true;
+
+	float curTMax = length(dir);
+	dir /= curTMax;
+
+	traceRayEXT(
+		MainTlas,            // acceleration structure
+		gl_RayFlagsTerminateOnFirstHitEXT | gl_RayFlagsSkipClosestHitShaderEXT,       // rayFlags
+		0xFF,           // cullMask
+		0,              // sbtRecordOffset
+		0,              // sbtRecordStride
+		0,              // missIndex
+		p1,             // ray origin
+		tMin,           // ray min range
+		dir,            // ray direction
+		curTMax - 2.0f * tMin,           // ray max range
+		2               // payload (location = 0)
+	);
+
+	return isShadowed;
+}
+
+// Offsets a ray origin slightly away from the surface to prevent self shadowing
+void CorrectOrigin(inout vec3 origin, vec3 normal)
+{
+    origin += normal * 0.005;
+} 
+
 void main() 
 {
+
+	ivec2 t = ivec2(200,200);
+	// current pixel position
 	uvec2 pixelCoord = gl_LaunchIDEXT.xy;
 
-	const vec2 pixelCenter = vec2(pixelCoord) + vec2(0.5);
-	const vec2 inUV = pixelCenter/vec2(gl_LaunchSizeEXT.xy);
-	vec2 d = inUV * 2.0 - 1.0;
+	vec3 cameraPos = Camera.InverseViewMatrix[3].xyz;
 
-	vec4 origin = Camera.InverseViewMatrix * vec4(0,0,0,1);
-	vec4 target = Camera.InverseProjectionMatrix * vec4(d.x, d.y, 1, 1) ;
-	vec4 direction = Camera.InverseViewMatrix*vec4(normalize(target.xyz), 0) ;
-
-	float tmin = 0.001;
-	float tmax = 10000.0;
-
-    ChildPayload = ConstructHitPayload();
-
-	ivec2 texSize = textureSize(NoiseSource, 0);
-
+	// =========================================================================================
+	// random number generation
+	ivec2 texSize = imageSize(NoiseSource);
 	ivec2 texel = ivec2(pixelCoord.x % texSize.x, pixelCoord.y % texSize.y);
 
 	uint left = TracerConfig.RngSeed;
-	uint right = texelFetch(NoiseSource, texel, 0).x;
+	uint right = imageLoad(NoiseSource, texel).x;
 	for (int i = 0; i < 4; i++)
 	{
 		uint temp = left & 0xFFFF | (right << 16);
@@ -102,140 +153,332 @@ void main()
 		left += temp;
 	}
 	ChildPayload.Seed = left + right;
-
 	uint randomSeed = left + right;
 
-    traceRayEXT(MainTlas, 0, 0xff, 0, 0, 0, origin.xyz, tmin, direction.xyz, tmax, 0);
+	// =========================================================================================
+	// collect gbuffer information
+	vec3 gbuf_albedo = texelFetch(GBufferTextures[GBUFFER_ALBEDO], ivec2(pixelCoord), 0).xyz;
+	vec3 gbuf_pos = texelFetch(GBufferTextures[GBUFFER_POS], ivec2(pixelCoord), 0).xyz;
+	vec3 gbuf_normal = texelFetch(GBufferTextures[GBUFFER_NORMAL], ivec2(pixelCoord), 0).xyz;
+	int gbuf_materialIndex = floatBitsToInt(texelFetch(GBufferTextures[GBUFFER_MATERIAL_INDEX], ivec2(pixelCoord), 0).x);
 
-	imageStore(ImageOutput, ivec2(pixelCoord.xy), vec4(ChildPayload.Radiance, 1.0));
+	// =========================================================================================
+	// discard invalid pixels for reservoir collection
+	if(gbuf_pos.x == 0 && gbuf_pos.y == 0 && gbuf_pos.z == 0)
+	{
+		// invalid position => discard
+		imageStore(ImageOutput, ivec2(pixelCoord), vec4(0));
+		return;
+	}
 
-	// testing reservoirs
-	vec4 color = vec4((prevFrameReservoirs.prevFrameReservoirs[0].numStreamSamples % 255) / 255.0f);
-	reservoirs.reservoirs[0].numStreamSamples = prevFrameReservoirs.prevFrameReservoirs[0].numStreamSamples + 1;
+	MaterialBufferObject surfaceMaterial = GetMaterialOrFallback(int(gbuf_materialIndex));
+	float albedoLum = luminance(gbuf_albedo);
 
-	// test gbuffer 
-	vec3 albedo = texelFetch(GBufferTextures[WORLDNORMAL], ivec2(pixelCoord), 0).xyz;
-	imageStore(ImageOutput, ivec2(pixelCoord.xy), vec4(albedo, 1));
+	// =========================================================================================
+	// create reservoir with initial samples
+	Reservoir res = newReservoir();
+	for (int i = 0; i < RestirConfig.InitialLightSampleCount; ++i)
+	{
+		// 1. Chose a 
+		// chose a triangle with importance sampling by light power
+		// NOTE: this is skipped, as it is only an optimisation.
+		//aliasTableSample(randFloat(rand), randFloat(rand), selected_idx, lightSampleProb);
 
-	// testing depth buffers
-	uint arrayLoc = pixelCoord.y * RestirConfig.ScreenSize.x + pixelCoord.x;
-	//debugPrintfEXT("x=%d, y=%d", RestirConfig.ScreenSize.x, RestirConfig.ScreenSize.y);
-	float prevFrameDepth = texelFetch(PreviousFrameImages[0], ivec2(pixelCoord), 0).x;
-	//prevFrameDepthBufferWrite.depth[arrayLoc] =  lcgFloat(randomSeed); mod(prevFrameDepthBufferRead.depth[arrayLoc] + 1/255.f,1.0f);
+		// probability for each light
+		float lightSampleProb = 1.0f/RestirConfig.NumTriLights;
 
-	imageStore(ImageOutput, ivec2(pixelCoord), vec4(prevFrameDepth, prevFrameDepth, prevFrameDepth, 1));
+		randomSeed++;
+		uint randomNr = lcgUint(randomSeed);
+		uint selected_idx = randomNr % RestirConfig.NumTriLights;
 
-	float depth = texelFetch(GBufferTextures[DEPTH], ivec2(pixelCoord), 0).x;
+		// pick a random point on the triangle light
+		TriLight light = triLights.triLights[selected_idx];
+		float r1 = lcgFloat(randomSeed);
+		float r2 = lcgFloat(randomSeed);
+		vec3 lightSamplePos = pickPointOnTriangle(r1, r2, light.p1.xyz, light.p2.xyz, light.p3.xyz);
 
-//	Reservoir res = newReservoir();
-//
-//	// RestirConfig
-//	for (int i = 0; i < RestirConfiguration.InitialLightSampleCount; ++i) {
-//		int selected_idx;
-//		float lightSampleProb;
-//
-//		// chose a triangle with importance sampling by light power
-//		//aliasTableSample(randFloat(rand), randFloat(rand), selected_idx, lightSampleProb);
-//
-//		uint randomNr = lcgUint(randomSeed);
-//		selected_idx = mod(randomNr, RestirConfiguration.NumTriLights); 
-//
-//		vec4 lightNormal;
-//		float lightSampleLum;
-//		int lightSampleIndex;
-//
-//		// pick a random point on the triangle light
-//		TriLight light = triLights.triLights[selected_idx];
-//		vec3 lightSamplePos = pickPointOnTriangle(lcgFloat(randomSeed), lcgFloat(randomSeed), light.p1.xyz, light.p2.xyz, light.p3.xyz);
-//		
-//		// TODO: calculate luminance from material id
-//		// lightSampleLum = light.emission_luminance.w;
-//		float lightSampleLum = 1.0;
-//
-//		vec3 wi = normalize(worldPos - lightSamplePos);
-//		vec3 normal = light.normalArea.xyz;
-//		lightSampleProb /= abs(dot(wi, normal)) * light.normalArea.w;
-//		lightNormal = vec4(normal, 1.0f);
-//
-//
-//		// evaluate light emission, based on view angle and material brdf
-////		float pHat = evaluatePHat(
-////			worldPos, lightSamplePos, uniforms.cameraPos.xyz,
-////			normal, lightNormal.xyz, lightNormal.w > 0.5f,
-////			albedoLum, lightSampleLum, roughnessMetallic.x, roughnessMetallic.y
-////		);
-//		float pHat = 1.0f;
-//
-//		addSampleToReservoir(res, lightSamplePos, lightNormal, lightSampleLum, lightSampleIndex, pHat, lightSampleProb, rand);
-//	}
-//
-//	uint reservoirIndex = pixelCoord.y * uniforms.screenSize.x + pixelCoord.x;
-//	
-//	vec3 worldPos = texelFetch(GBufferTextures[WORLDPOS], ivec2(pixelCoord), 0).xyz;
-//
-//	// Visibility Reuse (toggle ?)
-//	if(1)
-//	{
-//		for (int i = 0; i < RESERVOIR_SIZE; i++) {
-//			bool shadowed = testVisibility(worldPos, res.samples[i].position_emissionLum.xyz);
-//
-//			if (shadowed) {
-//				res.samples[i].w = 0.0f;
-//				res.samples[i].sumWeights = 0.0f;
-//			}
-//		}
-//	}
-//
-//	// Temporal reuse
-//	if (1) 
-//	{
-//		vec4 prevFramePos = uniforms.prevFrameProjectionViewMatrix * vec4(worldPos, 1.0f);
-//		prevFramePos.xyz /= prevFramePos.w;
-//		prevFramePos.xy = (prevFramePos.xy + 1.0f) * 0.5f * vec2(uniforms.screenSize);
-//		if (
-//			all(greaterThan(prevFramePos.xy, vec2(0.0f))) &&
-//			all(lessThan(prevFramePos.xy, vec2(uniforms.screenSize)))
-//		) {
-//			ivec2 prevFrag = ivec2(prevFramePos.xy);
-//
-//#ifdef COMPARE_DEPTH
-//			float depthDiff = prevFramePos.z - texelFetch(uniPrevDepth, prevFrag, 0).x;
-//			if (depthDiff < 0.001f * prevFramePos.z) {
-//#else
-//			// highest quality results can be obtained by directly comparing the world positions
-//			// the performance impact of this is unclear
-//			vec3 positionDiff = worldPos - texelFetch(uniPrevFrameWorldPosition, prevFrag, 0).xyz;
-//			if (dot(positionDiff, positionDiff) < 0.01f) {
-//#endif
-//				vec3 albedoDiff = albedo - texelFetch(uniPrevFrameAlbedo, prevFrag, 0).rgb;
-//				if (dot(albedoDiff, albedoDiff) < 0.01f) {
-//					float normalDot = dot(normal, texelFetch(uniPrevFrameNormal, prevFrag, 0).xyz);
-//					if (normalDot > 0.5f) {
-//						Reservoir prevRes = prevFrameReservoirs[prevFrag.y * uniforms.screenSize.x + prevFrag.x];
-//
-//						// clamp the number of samples
-//						prevRes.numStreamSamples = min(
-//							prevRes.numStreamSamples, uniforms.temporalSampleCountMultiplier * res.numStreamSamples
-//						);
-//
-//						vec2 metallicRoughness = texelFetch(uniMaterialProperties, ivec2(pixelCoord), 0).xy;
-//
-//						float pHat[RESERVOIR_SIZE];
-//						for (int i = 0; i < RESERVOIR_SIZE; ++i) {
-//							pHat[i] = evaluatePHat(
-//								worldPos, prevRes.samples[i].position_emissionLum.xyz, uniforms.cameraPos.xyz,
-//								normal, prevRes.samples[i].normal.xyz, prevRes.samples[i].normal.w > 0.5f,
-//								albedoLum, prevRes.samples[i].position_emissionLum.w, metallicRoughness.x, metallicRoughness.y
-//							);
-//						}
-//
-//						combineReservoirs(res, prevRes, pHat, rand);
-//					}
-//				}
-//			}
-//		}
-//	}
-//
-//	reservoirs[reservoirIndex] = res;
+		MaterialBufferObject lightMaterial = GetMaterialOrFallback(light.materialIndex);
+		float lightSampleLum = luminance(lightMaterial.EmissiveFactor);
 
+		vec3 wi = normalize(gbuf_pos - lightSamplePos);
+		vec3 normal = normalize(vec3(light.normal.xyz));
+
+		// lights that don't face surface are discarded
+		float normalToLight = clamp(dot(wi, normal), 0, 1);
+		float triangleAreaSize = light.normal.w;
+		lightSampleProb *= normalToLight * triangleAreaSize; // the worse the normalToLight angle, the smaller the probability
+
+		vec4 lightNormal = vec4(normal, 1.0f);
+
+		// evaluate light emission, based on view angle and material brdf
+		float pHat = evaluatePHat(
+			gbuf_pos+0.001, lightSamplePos, cameraPos,
+			gbuf_normal, lightNormal.xyz, lightNormal.w > 0.5f,
+			albedoLum, lightSampleLum, surfaceMaterial.RoughnessFactor, surfaceMaterial.MetallicFactor
+		);
+
+		// remove triangle self illumination
+		if(distance(gbuf_pos, lightSamplePos) < 1)
+		{
+			pHat = 0.0f;
+		}
+
+		randomSeed++;
+		addSampleToReservoir(res, lightSamplePos, lightNormal, lightSampleLum, selected_idx, pHat, lightSampleProb, randomSeed);
+	}
+
+	// check if the RESERVOIR_SIZE selected samples have visibility to surface point
+	for (int i = 0; i < RESERVOIR_SIZE; i++)
+	{
+		uint lightIndex = res.samples[i].lightIndex;
+		if( lightIndex == RESTIR_LIGHT_INDEX_INVALID )
+		{
+			res.samples[i].w = 0.0f;
+			res.samples[i].sumWeights = 0.0f;
+			res.samples[i].pHat = 0.0f;
+			continue;
+		}
+		vec3 lightDir = normalize(res.samples[i].position_emissionLum.xyz - gbuf_pos);
+		vec3 origin = gbuf_pos;
+		CorrectOrigin(origin, gbuf_normal);
+		bool shadowed = testVisibility(origin, res.samples[i].position_emissionLum.xyz);
+
+		if (shadowed) { 
+			res.samples[i].w = 0.0f;
+			res.samples[i].sumWeights = 0.0f;
+			res.samples[i].pHat = 0.0f;
+		}
+	} 
+
+	// =========================================================================================
+	// use motion buffer for reprojection of the pixels
+	// scale motion range from 0..1 to screen space
+	vec2 screenSize = vec2(RestirConfig.ScreenSize);
+	vec2 motion = texelFetch(GBufferTextures[GBUFFER_MOTION], ivec2(pixelCoord), 0).xy * screenSize;
+	
+	// + 0.5 to move from pixel center, leads to accurate reprojection
+	vec2 oldCoords = pixelCoord + motion + vec2(0.5f);
+
+	bool positionDiffValid = false;
+	bool normalDiffValid = false;
+	if(
+		all(greaterThanEqual(oldCoords.xy, vec2(-1.0f))) &&
+		all(lessThanEqual(oldCoords.xy, screenSize))
+	)
+	{
+		// compare world space position
+		vec3 oldWorldPos = texelFetch(PreviousFrameImages[PREVIOUSFRAME_POS], ivec2(oldCoords), 0).xyz;
+		vec3 positionDiff = gbuf_pos - oldWorldPos;
+		//const float maxPosDiff = 0.005f;
+		const float maxPosDiff = 0.35f;
+		if (dot(positionDiff,positionDiff) < maxPosDiff*maxPosDiff) {
+			positionDiffValid = true;
+		}
+
+		// compare surface normal
+		vec3 oldNormal = texelFetch(PreviousFrameImages[PREVIOUSFRAME_NORMAL], ivec2(oldCoords), 0).xyz;
+		vec3 normalDiff = gbuf_normal - oldNormal;
+		if (dot(normalDiff, normalDiff) < 0.05f) {
+			normalDiffValid = true;
+		}
+	}
+
+	// =========================================================================================
+	// TEMPORAL REUSE
+	if(RestirConfig.EnableTemporal == 1)
+	{
+		bool validForTemporalReuse = positionDiffValid && normalDiffValid;
+		if(validForTemporalReuse)
+		{
+			uvec2 prevFragCoords = uvec2(oldCoords - vec2(0.5));
+			Reservoir prevRes = prevFrameReservoirs.prevFrameReservoirs[prevFragCoords.y * RestirConfig.ScreenSize.x + prevFragCoords.x];
+
+			// clamp the number of samples
+			prevRes.numStreamSamples = min(
+				prevRes.numStreamSamples, 50
+			);
+		 
+			// reevaluate samples from reprojected reservoir
+			float pHat[RESERVOIR_SIZE];
+			for (int i = 0; i < RESERVOIR_SIZE; ++i)
+			{
+				// discard any invalid reservoirs
+				uint lightIndex = prevRes.samples[i].lightIndex;
+				if( lightIndex == RESTIR_LIGHT_INDEX_INVALID )
+					continue;
+
+				TriLight light = triLights.triLights[lightIndex];
+				MaterialBufferObject material = GetMaterialOrFallback(light.materialIndex);
+				float lightSampleLum = luminance(material.EmissiveFactor);
+
+				
+				pHat[i] = evaluatePHat(
+					gbuf_pos, prevRes.samples[i].position_emissionLum.xyz, cameraPos,
+					gbuf_normal, prevRes.samples[i].normal.xyz, prevRes.samples[i].normal.w > 0.5f,
+					albedoLum, lightSampleLum, surfaceMaterial.RoughnessFactor, surfaceMaterial.MetallicFactor
+					);
+			}
+
+			combineReservoirs(res, prevRes, pHat, randomSeed);
+		}
+	}
+	
+	  
+	// =========================================================================================
+	// SPATIAL REUSE
+	if(RestirConfig.EnableSpatial == 1)
+	{
+		uint numNeighbours = RestirConfig.SpatialNeighbors;
+		numNeighbours = 10;
+		for(int i = 0; i < numNeighbours; i++)
+		{
+			ivec2 randNeighbor = ivec2(0, 0);
+			
+			randomSeed++;
+			float angle = lcgFloat(randomSeed) * 2.0 * PI;
+			float spatialRadius = RestirConfig.SpatialRadius;
+			spatialRadius = 3.0f;
+			randomSeed++;
+			float radius = sqrt(lcgFloat(randomSeed)) * spatialRadius;
+
+			ivec2 randNeighborOffset = ivec2(round(cos(angle) * radius), round(sin(angle) * radius));
+
+			randNeighbor.x = randNeighborOffset.x + int(oldCoords.x);
+			randNeighbor.y = randNeighborOffset.y + int(oldCoords.y);
+
+			if(randNeighbor.x < 0 || randNeighbor.x > int(RestirConfig.ScreenSize.x) - 1 ||
+				randNeighbor.y < 0 || randNeighbor.y > int(RestirConfig.ScreenSize.y) - 1 )
+			{ 
+				continue;
+			}
+
+			// random reservoir index
+			uint randIndex = randNeighbor.y * RestirConfig.ScreenSize.x + randNeighbor.x;
+
+			// Discard over biased neighbors
+			vec3 neighborPos = texelFetch(PreviousFrameImages[PREVIOUSFRAME_POS], ivec2(randNeighbor), 0).xyz;
+			if(neighborPos.x == 0 && neighborPos.y == 0 && neighborPos.z == 0)
+			{
+				// invalid position
+				continue;
+			}
+
+			vec3 neighborNor = texelFetch(PreviousFrameImages[PREVIOUSFRAME_NORMAL], ivec2(randNeighbor), 0).xyz;
+
+			vec3 posDiff = neighborPos - gbuf_pos;
+			float spatialThreshold = RestirConfig.SpatialPosThreshold;
+			spatialThreshold = 0.5;
+			float posDiffMaxSquared = spatialThreshold * spatialThreshold;
+
+			float spatialNormalThreshold = RestirConfig.SpatialNormalThreshold;
+			spatialNormalThreshold = 20.0f;
+			if (
+				dot(posDiff, posDiff) > posDiffMaxSquared ||
+				dot(neighborNor, gbuf_normal) < cos(radians(spatialNormalThreshold))
+			) {
+				continue;
+			}
+
+			// random reservoir
+			Reservoir randRes = prevFrameReservoirs.prevFrameReservoirs[randIndex];
+
+			// clamp history
+			randRes.numStreamSamples = min(  
+				randRes.numStreamSamples,  50
+			);
+
+			// reevaluate random reservoir for current pixel 
+			float newPHats[RESERVOIR_SIZE];
+			for (int j = 0; j < RESERVOIR_SIZE; ++j)
+			{
+				uint lightIndex = randRes.samples[j].lightIndex; 
+				if( lightIndex == RESTIR_LIGHT_INDEX_INVALID )
+					continue;
+
+				TriLight light = triLights.triLights[lightIndex];
+				MaterialBufferObject material = GetMaterialOrFallback(light.materialIndex);
+				float lightSampleLum = luminance(material.EmissiveFactor);
+
+				newPHats[j] = evaluatePHat(
+					gbuf_pos, randRes.samples[j].position_emissionLum.xyz, cameraPos,
+					gbuf_normal, randRes.samples[j].normal.xyz, randRes.samples[j].normal.w > 0.5f,
+					albedoLum, lightSampleLum, surfaceMaterial.RoughnessFactor, surfaceMaterial.MetallicFactor
+				);
+			}
+
+			combineReservoirs(res, randRes, newPHats, randomSeed);
+		}
+
+		
+
+	}
+
+	// =========================================================================================
+	// update visibility - we don't store invalid reservoirs
+	bool shadowed = true;
+	for (int i = 0; i < RESERVOIR_SIZE; i++) 
+	{
+		// visbility ray from visible world pos to selected light source 
+		vec3 lightDir = normalize(res.samples[i].position_emissionLum.xyz - gbuf_pos);
+		vec3 origin = gbuf_pos;
+		CorrectOrigin(origin, gbuf_normal);
+		
+		bool shadowed = testVisibility(origin, res.samples[i].position_emissionLum.xyz);
+		if (shadowed) 
+		{ 
+			res.samples[i].w = 0.0f;
+			res.samples[i].sumWeights = 0.0f;
+			res.samples[i].pHat = 0; 
+		}
+	}
+
+	// =========================================================================================
+	// write back to reservoir
+	uint reservoirIndex = pixelCoord.y * RestirConfig.ScreenSize.x + pixelCoord.x;
+	reservoirs.reservoirs[reservoirIndex] = res;
+
+	// =========================================================================================
+	// shade pixel based on samples
+	vec4 finalColor;
+	{
+		vec3 lightEmissionColor = vec3(0);
+		float totalpHat = 0;
+		for (int i = 0; i < RESERVOIR_SIZE; i++) 
+		{
+			// evaluate light material
+			uint lightIndex = res.samples[i].lightIndex;
+			TriLight light = triLights.triLights[lightIndex];
+			MaterialBufferObject lightMaterial = GetMaterialOrFallback(light.materialIndex);
+
+			// add material color
+			lightEmissionColor += lightMaterial.EmissiveFactor;
+
+			// add sample brightness
+			totalpHat += res.samples[i].pHat;
+		}
+		lightEmissionColor /= RESERVOIR_SIZE;
+		totalpHat /= RESERVOIR_SIZE;
+			
+		// emissive surfaces have their albedo as color
+		if(dot(surfaceMaterial.EmissiveFactor,surfaceMaterial.EmissiveFactor) > 0)
+		{
+			// for emissive surfaces use surface albedo or material emissive factor
+			finalColor = vec4( gbuf_albedo, 1.0f);
+			if(dot(gbuf_albedo,gbuf_albedo) <= 0)
+				finalColor = vec4( surfaceMaterial.EmissiveFactor, 1.0f);
+		}
+		else // surface is not emissive => shade surface
+		{
+				
+			finalColor = vec4( gbuf_albedo * vec3(totalpHat) , 1.0f);
+			finalColor *= 50; // increase lighting power
+		}
+		
+		// no additional lighting on surfaces that are emissive -> that looks kinda bad.
+		if(dot(surfaceMaterial.EmissiveFactor, surfaceMaterial.EmissiveFactor) <= 0)
+			finalColor *= vec4(lightEmissionColor, 1);
+	}
+
+	// store pixel color
+	imageStore(ImageOutput, ivec2(pixelCoord), vec4(finalColor));
 }
