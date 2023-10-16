@@ -38,13 +38,9 @@ VkBool32 myDebugCallback(VkDebugReportFlagsEXT      flags,
 void RestirProject::ApiBeforeInit()
 {
 #ifdef USE_PRINTF
-    mInstance.SetEnableDebugReport(true);
     mInstance.SetDebugReportFunc(&myDebugCallback);
-#else
-
-    mInstance.SetEnableDebugReport(false);
 #endif
-
+    mInstance.SetEnableDebugReport(true);
     // performance
     mInstance.SetEnableDebugLayersAndCallbacks(false);
 
@@ -85,9 +81,10 @@ void RestirProject::loadScene()
     std::vector<ModelLoad> modelLoads({
         // Bistro exterior
         {
+            
             //.ModelPath = "E:/gltf/BistroExterior_out/BistroExterior.gltf",
-            //.ModelPath = "E:\\Programming\\foray_restir\\data\\gltf\\testbox\\pillar_room.gltf",
-            .ModelPath = "E:\\Programming\\foray_restir\\data\\gltf\\testbox\\scene_emissive2.gltf",
+            //.ModelPath = std::string(CWD_OVERRIDE_PATH) + "\\..\\data\\scenes\\pillar_room\\pillar_room.gltf",
+            .ModelPath = std::string(CWD_OVERRIDE_PATH) + "\\..\\data\\scenes\\emissive_spheres\\emissive_spheres.gltf",
             //.ModelPath = "../data/scenes/sponza/glTF/Sponza.gltf", s
             .ModelConverterOptions = {
                 .FlipY = false,
@@ -308,16 +305,6 @@ void RestirProject::PrepareImguiWindow()
             ImGui::EndCombo();
         }
 
-        ImGui::End();
-
-        ImGui::Begin("printf trace");
-        ImGui::Text("%d", (int)g_ShaderPrintfLog.size());
-        ImGui::BeginChild("Scrolling");
-        for(int n = 0; n < g_ShaderPrintfLog.size(); n++)
-        {
-            ImGui::Text("%s", g_ShaderPrintfLog[n].c_str());
-        }
-        ImGui::EndChild();
         ImGui::End();
     });
 }
