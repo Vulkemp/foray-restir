@@ -1573,7 +1573,7 @@
     "buffers" : [
         {
             "byteLength" : 24190964,
-            "uri" : "scene_emissive2.bin"
+            "uri" : "emissive_spheres.bin"
         }
     ]
 }
