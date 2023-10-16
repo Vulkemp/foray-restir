@@ -82,10 +82,9 @@ void RestirProject::loadScene()
         // Bistro exterior
         {
             
-            //.ModelPath = "E:/gltf/BistroExterior_out/BistroExterior.gltf",
+            .ModelPath = std::string(CWD_OVERRIDE_PATH) + "\\..\\data\\scenes\\bistro_exterior\\BistroExterior.gltf",
             //.ModelPath = std::string(CWD_OVERRIDE_PATH) + "\\..\\data\\scenes\\pillar_room\\pillar_room.gltf",
-            .ModelPath = std::string(CWD_OVERRIDE_PATH) + "\\..\\data\\scenes\\emissive_spheres\\emissive_spheres.gltf",
-            //.ModelPath = "../data/scenes/sponza/glTF/Sponza.gltf", s
+            //.ModelPath = std::string(CWD_OVERRIDE_PATH) + "\\..\\data\\scenes\\emissive_spheres\\emissive_spheres.gltf",
             .ModelConverterOptions = {
                 .FlipY = false,
             },
