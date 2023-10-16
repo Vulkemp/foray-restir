@@ -1,19 +1,19 @@
-#include "foray_complexrtapp.hpp"
+#include "sampling_testapp.hpp"
 #include <foray_basics.hpp>
 #include <foray_logger.hpp>
 #include <osi/foray_env.hpp>
 #include <vector>
 
-namespace complex_raytracer {
+namespace sampling_testapp {
 
 
     int example(std::vector<std::string>& args)
     {
         foray::osi::OverrideCurrentWorkingDirectory(CWD_OVERRIDE);
-        ComplexRaytracerApp app;
+        SamplingTestApp app;
         return app.Run();
     }
-}  // namespace complex_raytracer
+}  // namespace sampling_testapp
 
 int main(int argv, char** args)
 {
@@ -22,5 +22,5 @@ int main(int argv, char** args)
     {
         argvec[i] = args[i];
     }
-    return complex_raytracer::example(argvec);
+    return sampling_testapp::example(argvec);
 }

@@ -13,5 +13,5 @@ add_subdirectory("foray")
 
 include(foray_example)
 
-add_subdirectory("src")
-add_subdirectory("research_apps/complex-raytracer")
+add_subdirectory("restir_app")
+add_subdirectory("sampling_testapp")

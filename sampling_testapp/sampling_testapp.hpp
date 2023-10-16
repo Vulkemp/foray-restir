@@ -2,7 +2,7 @@
 #include <foray_api.hpp>
 #include <scene/globalcomponents/foray_lightmanager.hpp>
 
-namespace complex_raytracer {
+namespace sampling_testapp {
 
     inline const std::string RAYGEN_FILE      = "shaders/raygen.rgen";
     inline const std::string CLOSESTHIT_FILE  = "shaders/default/closesthit.rchit";
@@ -11,11 +11,11 @@ namespace complex_raytracer {
     inline const std::string VISI_MISS_FILE   = "shaders/visibilitytest/miss.rmiss";
     inline const std::string VISI_ANYHIT_FILE = "shaders/visibilitytest/anyhit.rahit";
 
-    inline const std::string SCENE_FILE = DATA_DIR "/gltf/testbox/scene_emissive2.gltf";
+    inline const std::string SCENE_FILE = DATA_DIR "/scenes/emissive_spheres/emissive_spheres.gltf";
     /// @brief If true, will invert the viewport when blitting. Will invert the scene while loading to -Y up if false
     inline constexpr bool INVERT_BLIT_INSTEAD = true;
 
-    class ComplexRaytracingStage : public foray::stages::DefaultRaytracingStageBase
+    class SamplingTestStage : public foray::stages::DefaultRaytracingStageBase
     {
       public:
         virtual void Init(foray::core::Context* context, foray::scene::Scene* scene);
@@ -41,7 +41,7 @@ namespace complex_raytracer {
 
     };
 
-    class ComplexRaytracerApp : public foray::base::DefaultAppBase
+    class SamplingTestApp : public foray::base::DefaultAppBase
     {
       protected:
         virtual void ApiBeforeInit() override;
@@ -53,9 +53,9 @@ namespace complex_raytracer {
         virtual void ApiRender(foray::base::FrameRenderInfo& renderInfo) override;
         virtual void ApiDestroy() override;
         
-		ComplexRaytracingStage               mRtStage;
+		SamplingTestStage               mRtStage;
         foray::stages::ImageToSwapchainStage mSwapCopyStage;
         std::unique_ptr<foray::scene::Scene> mScene;
     };
 
-}  // namespace complex_raytracer
+}  // namespace sampling_testapp

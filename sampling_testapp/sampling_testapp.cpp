@@ -1,18 +1,18 @@
-#include "foray_complexrtapp.hpp"
+#include "sampling_testapp.hpp"
 
-namespace complex_raytracer {
-    void ComplexRaytracingStage::Init(foray::core::Context* context, foray::scene::Scene* scene)
+namespace sampling_testapp {
+    void SamplingTestStage::Init(foray::core::Context* context, foray::scene::Scene* scene)
     {
         mLightManager = scene->GetComponent<foray::scene::gcomp::LightManager>();
         foray::stages::DefaultRaytracingStageBase::Init(context, scene);
     }
 
-    void ComplexRaytracingStage::Destroy()
+    void SamplingTestStage::Destroy()
     {
         mLights.Destroy();
     }
 
-    void ComplexRaytracingStage::ApiCreateRtPipeline()
+    void SamplingTestStage::ApiCreateRtPipeline()
     {
         foray::core::ShaderCompilerConfig options{.IncludeDirs = {FORAY_SHADER_DIR}};
 
@@ -31,7 +31,7 @@ namespace complex_raytracer {
         mPipeline.Build(mContext, mPipelineLayout);
     }
 
-    void ComplexRaytracingStage::ApiDestroyRtPipeline()
+    void SamplingTestStage::ApiDestroyRtPipeline()
     {
         mPipeline.Destroy();
         mRaygen.Destroy();
@@ -42,7 +42,7 @@ namespace complex_raytracer {
         mVisiAnyHit.Destroy();
     }
 
-    void ComplexRaytracingStage::CreateOrUpdateDescriptors()
+    void SamplingTestStage::CreateOrUpdateDescriptors()
     {
         InitLights();
         const uint32_t bindpoint_lights = 11;
@@ -53,7 +53,7 @@ namespace complex_raytracer {
         foray::stages::DefaultRaytracingStageBase::CreateOrUpdateDescriptors();
     }
 
-    void ComplexRaytracingStage::InitLights()
+    void SamplingTestStage::InitLights()
     {
         struct Light
         {
@@ -93,13 +93,13 @@ namespace complex_raytracer {
         return false;
     }
 
-    void ComplexRaytracerApp::ApiBeforeInit()
+    void SamplingTestApp::ApiBeforeInit()
     {
         mInstance.SetEnableDebugReport(true);
         mInstance.SetDebugReportFunc(&myDebugCallback);
     }
 
-    void ComplexRaytracerApp::ApiInit()
+    void SamplingTestApp::ApiInit()
     {
         mWindowSwapchain.GetWindow().DisplayMode(foray::osi::EDisplayMode::WindowedResizable);
 
@@ -127,17 +127,17 @@ namespace complex_raytracer {
         RegisterRenderStage(&mSwapCopyStage);
     }
 
-    void ComplexRaytracerApp::ApiOnEvent(const foray::osi::Event* event)
+    void SamplingTestApp::ApiOnEvent(const foray::osi::Event* event)
     {
         mScene->InvokeOnEvent(event);
     }
 
-    void ComplexRaytracerApp::ApiOnResized(VkExtent2D size)
+    void SamplingTestApp::ApiOnResized(VkExtent2D size)
     {
         mScene->InvokeOnResized(size);
     }
 
-    void ComplexRaytracerApp::ApiRender(foray::base::FrameRenderInfo& renderInfo)
+    void SamplingTestApp::ApiRender(foray::base::FrameRenderInfo& renderInfo)
     {
         foray::core::DeviceSyncCommandBuffer& cmdBuffer = renderInfo.GetPrimaryCommandBuffer();
         cmdBuffer.Begin();
@@ -149,11 +149,11 @@ namespace complex_raytracer {
         cmdBuffer.Submit();
     }
 
-    void ComplexRaytracerApp::ApiDestroy()
+    void SamplingTestApp::ApiDestroy()
     {
         mRtStage.Destroy();
         mSwapCopyStage.Destroy();
         mScene = nullptr;
     }
 
-}  // namespace complex_raytracer
+}  // namespace sampling_testapp
