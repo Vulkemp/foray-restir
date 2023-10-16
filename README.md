@@ -19,8 +19,18 @@ Clones the repository and the foray submodule.
 
 # Available scenes
 
-The repository contains three main scenes: emissive spheres, pillar room and bistro exterior that were tested. A scene can be chosen in the `restir_app.cpp`
-file in the `void RestirProject::loadScene()` method. Simply comment in the desired scene path.
+The repository contains three main scenes:
+* emissive spheres
+* pillar room 
+* bistro exterior
+A scene can be chosen in the `restir_app.cpp` file by editing `void RestirProject::loadScene()` method. Simply comment in the desired scene path.
 
 ## Bistro Exterior
 Due to size restrictions before using the bistro exterior scene, the gltf binary must be unzipped. Inside the path `data/scenes/bistro_exterior` the `buffer.zip` file must be unzipped, so the `buffer.bin` is available in the directory.
+
+# Apps
+
+There are two apps available
+* restir_app - Main application that shows the reservoir light sampling on the three available test scenes.
+* sampling_testapp - Used for testing the other sampling methods. Only supports the emissive scenes scene.
+
