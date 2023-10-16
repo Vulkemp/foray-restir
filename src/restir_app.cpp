@@ -85,9 +85,9 @@ void RestirProject::loadScene()
     std::vector<ModelLoad> modelLoads({
         // Bistro exterior
         {
-            .ModelPath = "E:/gltf/BistroExterior_out/BistroExterior.gltf",
+            //.ModelPath = "E:/gltf/BistroExterior_out/BistroExterior.gltf",
             //.ModelPath = "E:\\Programming\\foray_restir\\data\\gltf\\testbox\\pillar_room.gltf",
-            //.ModelPath = "E:\\Programming\\foray_restir\\data\\gltf\\testbox\\scene_emissive2.gltf",
+            .ModelPath = "E:\\Programming\\foray_restir\\data\\gltf\\testbox\\scene_emissive2.gltf",
             //.ModelPath = "../data/scenes/sponza/glTF/Sponza.gltf", s
             .ModelConverterOptions = {
                 .FlipY = false,
@@ -111,7 +111,8 @@ void RestirProject::loadScene()
     mScene->UseDefaultCamera(true);
 
     auto ptr = mScene->GetComponent<foray::scene::gcomp::AnimationManager>();
-    ptr->GetPlaybackConfig().PlaybackSpeed = 0;
+    if(ptr)
+        ptr->GetPlaybackConfig().PlaybackSpeed = 0;
 
     for(int32_t i = 0; i < modelLoads.size(); i++)
     {
@@ -324,7 +325,7 @@ void RestirProject::PrepareImguiWindow()
 void RestirProject::ConfigureStages()
 {
     mGbufferStage.Init(&mContext, mScene.get());
-    mRestirStage.Init(&mContext, mScene.get(), &mSphericalEnvMapSampler, &mNoiseSource.GetImage(), &mGbufferStage, this);
+    mRestirStage.Init(&mContext, mScene.get(), &mSphericalEnvMapSampler, &mNoiseSource.GetImage(), &mGbufferStage, &mImguiStage, this);
     mRestirStage.SetNumberOfTriangleLights(mTriangleLights.size());
 
     auto depthImage = mGbufferStage.GetImageOutput(mGbufferStage.DepthOutputName);
@@ -335,6 +336,7 @@ void RestirProject::ConfigureStages()
 
     mImguiStage.InitForSwapchain(&mContext);
     PrepareImguiWindow();
+    mRestirStage.PrepareImguiWindow();
 
     // Init copy stage
     mImageToSwapchainStage.Init(&mContext, mOutputs[mCurrentOutput]);

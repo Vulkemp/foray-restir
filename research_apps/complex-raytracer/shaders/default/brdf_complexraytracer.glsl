@@ -94,7 +94,7 @@ float evaluatePHat(
 	vec3 wi = lightPos - worldPos;
 	if (dot(wi, normal) < 0.0f) {
 		return 0.0f;
-	} 
+	}
 
 	float sqrDist = dot(wi, wi);
 	wi /= sqrt(sqrDist);

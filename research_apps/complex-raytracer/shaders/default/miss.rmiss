@@ -11,4 +11,5 @@ void main()
 {
     // The hit shader is invoked, when no geometry has been hit. We could render a skybox in here
     ReturnPayload.Radiance = vec3(0.0, 0.0, 0.0);
+    ReturnPayload.Distance = 0;
 }

@@ -28,6 +28,8 @@ namespace foray {
             float      SpatialRadius;
             int32_t    Flags;
             uint32_t   NumTriLights;
+            uint32_t   EnableTemporal;
+            uint32_t   EnableSpatial;
         };
 
         struct alignas(16) LightSample
@@ -58,11 +60,14 @@ namespace foray {
                           foray::core::CombinedImageSampler* envmap,
                           foray::core::ManagedImage*         noiseSource,
                           foray::stages::GBufferStage*       gbufferStage,
+                          foray::stages::ImguiStage*         imguiStage,
                           RestirProject*                     restirApp);
 
         virtual void Resize(const VkExtent2D& extent) override;
 
         void SetNumberOfTriangleLights(uint32_t numTriangleLights);
+
+        void PrepareImguiWindow();
 
       protected:
         RestirProject* mRestirApp{};
@@ -103,14 +108,17 @@ namespace foray {
 		static inline const std::string RAYGEN_FILE = "shaders/raygen.rgen";
         static inline const std::string ANYHIT_FILE  = "shaders/ray-default/anyhit.rahit";
 
-        static inline const std::string VISI_MISS_FILE   = "shaders/restir/hwVisibilityTest.rmiss";
-        static inline const std::string VISI_ANYHIT_FILE = "shaders/restir/hwVisibilityTest.rchit";
+        static inline const std::string VISI_MISS_FILE   = "shaders/restir/visibilityTest.rmiss";
+        static inline const std::string VISI_ANYHIT_FILE = "shaders/restir/visibilityTest.rchit";
 
 		foray::core::ShaderModule mRaygen;
         foray::core::ShaderModule mAnyHit;
 
         foray::core::ShaderModule mVisiMiss;
         foray::core::ShaderModule mVisiAnyHit;
+
+        // access to imgui stage
+        foray::stages::ImguiStage* mImguiStageRef{};
 
         // previous frame infos
         enum PreviousFrame

@@ -3,6 +3,7 @@
 #include <core/foray_shadermanager.hpp>
 #include <foray_api.hpp>
 #include <scene/globalcomponents/foray_cameramanager.hpp>
+#include <imgui/imgui.h>
 
 // only testwise
 #include <as/foray_geometrymetabuffer.hpp>
@@ -17,10 +18,12 @@ namespace foray {
                            foray::core::CombinedImageSampler* envmap,
                            foray::core::ManagedImage*         noiseSource,
                            foray::stages::GBufferStage*       gbufferStage,
+                           foray::stages::ImguiStage*         imguiStage,
                            RestirProject*                     restirApp)
     {
         mRestirApp    = restirApp;
         mGBufferStage = gbufferStage;
+        mImguiStageRef = imguiStage;
         GetGBufferImages();
         stages::DefaultRaytracingStageBase::Init(context, scene, envmap, noiseSource);
         mRngSeedPushCOffset = ~0U;
@@ -177,6 +180,16 @@ namespace foray {
     void RestirStage::SetNumberOfTriangleLights(uint32_t numTriangleLights)
     {
         mRestirConfigurationUbo.GetData().NumTriLights = numTriangleLights;
+    }
+
+    void RestirStage::PrepareImguiWindow()
+    {
+        mImguiStageRef->AddWindowDraw([this]() {
+            ImGui::Begin("ReSTIR Config");
+            ImGui::Checkbox("Enable temporal", (bool*)(&mRestirConfigurationUbo.GetData().EnableTemporal));
+            ImGui::Checkbox("Enable spatial", (bool*)(&mRestirConfigurationUbo.GetData().EnableSpatial));
+            ImGui::End();
+        });
     }
 
 #pragma endregion

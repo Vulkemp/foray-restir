@@ -15,7 +15,8 @@
 #include "common/normaltbn.glsl" // Normal calculation in tangent space
 #include "common/lcrng.glsl"
 #include "rt_common/tlas.glsl" // Binds Top Level Acceleration Structure
-
+#include "brdf_complexraytracer.glsl"
+#include "common/xteanoise.glsl"
 
 /// @brief Describes a simplified light source
 struct Light  // std430
@@ -52,7 +53,14 @@ void CorrectOrigin(inout vec3 origin, vec3 normal, float nDotL)
 {
     float correctorLength = clamp((1.0 - nDotL) * 0.005, 0, 1);
     origin += normal * correctorLength;
-} 
+}
+
+float luminance(vec3 rgb)
+{
+    // Algorithm from Chapter 10 of Graphics Shaders.
+    const vec3 W = vec3(0.2125, 0.7154, 0.0721);
+    return dot(rgb, W);
+}
 
 vec2 hammersley2d(uint i, uint N) 
 {
@@ -196,6 +204,15 @@ vec3 sampleLight(vec3 origin, uint seed)
 	return normalize(dir);
 }
 
+uint hash( uint x ) {
+    x += ( x << 10u );
+    x ^= ( x >>  6u );
+    x += ( x <<  3u );
+    x ^= ( x >> 11u );
+    x += ( x << 15u );
+    return x;
+}
+
 void main()
 {
 	
@@ -249,75 +266,121 @@ void main()
 
     normalWorldSpace = ApplyNormalMap(TBN, probe);
 
+    vec3 cameraPos = Camera.InverseViewMatrix[3].xyz;
 	 
 	// evaluate material at hit point
 	// sample_material(hitpoint, inDir, outDir, material, probe);
-	vec3 brdf = vec3(1);
+	float brdf = 1;
+
+    vec3 baseColor = probe.BaseColor.xyz;
 
 	// incoming light to current point
 	vec3 Li = vec3(0);
 
     if (ReturnPayload.Depth < 1)
     {
-		uint seed = ReturnPayload.Seed;
-		// incoming light direction Wi w
-		//vec3 Wi2 = hemiSpherePoint(normalWorldSpace, seed);
-		//vec3 Wi2 = hemiSpherePointCos2(normalWorldSpace, seed);
-        //vec3 Wi = hemiSpherePointCos(normalWorldSpace, seed); 
+       uint seed = ReturnPayload.Seed;
+       int numCollectedSamples = 1;
+        for(int i = 0; i < numCollectedSamples; i++)
+        {
+            //seed = hash(seed);
+            //vec2 a = hammersley2d(seed, seed*seed);
+            
+		    // incoming light direction Wi w
+		    //vec3 Wi2 = hemiSpherePoint(normalWorldSpace, seed);
+		    //vec3 Wi2 = hemiSpherePointCos2(normalWorldSpace, seed);
+            //vec3 Wi = hemiSpherePointCos(normalWorldSpace, seed); 
 
-//		for(int i = 0; i < 3; i++)
-//		{
-//			vec3 ray = posWorldSpace - gl_WorldRayOriginEXT;
-//			vec3 reflectedDir = normalize(reflect(ray, normalWorldSpace));
-//
-//			// sample after brdf
-//			vec3 Wi2 = importanceSample_GGX(seed, probe.MetallicRoughness.y, reflectedDir);
-//
-//			// sample after Light
-//			//vec3 Wi2 = sampleLight(posWorldSpace, seed);
-//
-//			vec3 Wi = vec3(-lcgFloat(seed), lcgFloat(seed), -lcgFloat(seed));
-//
-//			vec4 o = CollectIncomingLightRandomHemiSphere(posWorldSpace, normalWorldSpace, Wi);
-//			vec4 o2 = CollectIncomingLightRandomHemiSphere(posWorldSpace, normalWorldSpace, Wi2);
-//			//Li = o2.xyz / (o2.w*o2.w);
-//			Li += o2.xyz;
-//			//Li = (o.xyz / (o.w*o.w)+o2.xyz)/2;
-//		}
-//		Li /= 3.0f;
+    //		for(int i = 0; i < 3; i++)
+    //		{
+    //			vec3 ray = posWorldSpace - gl_WorldRayOriginEXT;
+    //			vec3 reflectedDir = normalize(reflect(ray, normalWorldSpace));
+    //
+    //			// sample after brdf
+    //			vec3 Wi2 = importanceSample_GGX(seed, probe.MetallicRoughness.y, reflectedDir);
+    //
+    //			// sample after Light
+    //			//vec3 Wi2 = sampleLight(posWorldSpace, seed);
+    //
+    //			vec3 Wi = vec3(-lcgFloat(seed), lcgFloat(seed), -lcgFloat(seed));
+    //
+    //			vec4 o = CollectIncomingLightRandomHemiSphere(posWorldSpace, normalWorldSpace, Wi);
+    //			vec4 o2 = CollectIncomingLightRandomHemiSphere(posWorldSpace, normalWorldSpace, Wi2);
+    //			//Li = o2.xyz / (o2.w*o2.w);
+    //			Li += o2.xyz;
+    //			//Li = (o.xyz / (o.w*o.w)+o2.xyz)/2;
+    //		}
+    //		Li /= 3.0f;
 
-		vec3 ray = posWorldSpace - gl_WorldRayOriginEXT;
-		vec3 reflectedDir = normalize(reflect(ray, normalWorldSpace));
+		    vec3 ray = posWorldSpace - gl_WorldRayOriginEXT;
+		    vec3 reflectedDir = normalize(reflect(ray, normalWorldSpace));
 
-		// sample after brdf
-		//vec3 Wi2 = importanceSample_GGX(seed, probe.MetallicRoughness.y, reflectedDir);
+		    // sample after brdf
+		    vec3 brdf_sample_dir = importanceSample_GGX(seed, probe.MetallicRoughness.y, reflectedDir);
+		    vec4 brdf_sample_result = CollectIncomingLightRandomHemiSphere(posWorldSpace, normalWorldSpace, brdf_sample_dir);
+            vec3 brdf_sample_radiance = brdf_sample_result.xyz;
+            float brdf_sample_distance = brdf_sample_result.w;
 
-		// sample after Light
-		vec3 Wi2 = sampleLight(posWorldSpace, seed);
+		    // sample after Light
+		    vec3 light_sample_dir = sampleLight(posWorldSpace, seed);
+		    vec4 light_sample_result = CollectIncomingLightRandomHemiSphere(posWorldSpace, normalWorldSpace, light_sample_dir);
+            vec3 light_sample_radiance = light_sample_result.xyz;
+            float light_sample_distance = light_sample_result.w;
 
-		vec3 Wi = vec3(-lcgFloat(seed), lcgFloat(seed), -lcgFloat(seed));
+            // uniform sampling of the hemisphere
+		    vec3 uniform_random_sample_dir = hemiSpherePoint(normalWorldSpace, seed);
+            vec4 uniform_random_sample_result = CollectIncomingLightRandomHemiSphere(posWorldSpace, normalWorldSpace, uniform_random_sample_dir);
+            vec3 uniform_random_sample_radiance = uniform_random_sample_result.xyz;
+            float uniform_random_sample_distance = uniform_random_sample_result.w;
 
-		vec4 o = CollectIncomingLightRandomHemiSphere(posWorldSpace, normalWorldSpace, Wi);
-		vec4 o2 = CollectIncomingLightRandomHemiSphere(posWorldSpace, normalWorldSpace, Wi2);
-		//Li = o2.xyz / (o2.w*o2.w);
-		Li = o2.xyz / (o2.w*o2.w);
-		//Li = (o.xyz / (o.w*o.w)+o2.xyz)/2;
+            // cos weighted sampling of the hemisphere
+            vec3 cos_weighted_sample_dir = hemiSpherePointCos2(normalWorldSpace, seed);
+            vec4 cos_weighted_sample_result = CollectIncomingLightRandomHemiSphere(posWorldSpace, normalWorldSpace, cos_weighted_sample_dir);
+            vec3 cos_weighted_sample_radiance = cos_weighted_sample_result.xyz;
+            float cos_weighted_sample_distance = cos_weighted_sample_result.w;
 
+		    //Li = o2.xyz / (o2.w*o2.w);
+		    //Li = o2.xyz / (o2.w*o2.w);
 
-		// evaluate brdf based in sample direction wo
-		brdf = vec3(1); // TODO: sample_material(...)
+            // mixture
+		    //Li = light_sample_radiance / (light_sample_distance * light_sample_distance);
+            //Li += brdf_sample_radiance;
+            // two lights added, need to divide
+            //Li /= 2;
+
+            //Li = (light_sample_radiance + brdf_sample_radiance) / (2*brdf_sample_distance * brdf_sample_distance);
+            //Li = (light_sample_radiance + brdf_sample_radiance) / brdf_sample_distance;
+
+            // mixed brdf and light
+            //Li = light_sample_radiance / (light_sample_distance * light_sample_distance) + (brdf_sample_radiance / brdf_sample_distance);
+                 
+            // radiance from light sampling
+            Li += light_sample_radiance / (light_sample_distance * light_sample_distance);
+
+            // radiance from brdf sampling
+            Li += brdf_sample_radiance / (brdf_sample_distance * brdf_sample_distance);
+
+            //Li /= 2;
+
+            // uniform weighted
+            //Li = uniform_random_sample_radiance / uniform_random_sample_distance;
+
+            // cosine weighted
+            //Li = cos_weighted_sample_radiance / cos_weighted_sample_distance;
+
+            // remove attenuation
+            Li *= 20;
+        }
     }
-
+    //Li *= 5;
 	// emissive light 
 	vec3 Le = probe.EmissiveColor;
-
-	vec3 baseColor = probe.BaseColor.xyz;
 	
 
 	// emitted outgoing radiance 
     float rayDist = length(posWorldSpace - gl_WorldRayOriginEXT);
 	vec3 Lo = Li * brdf + Le;
-
+    
 	if(Le.x > 0 || Le.y > 0)
 	{
 		//debugPrintfEXT("Lo = %f, %f, %f \n", Lo.x, Lo.y, Lo.z);
@@ -326,6 +389,20 @@ void main()
 		
 		//debugPrintfEXT("point = %f, %f, %f \n", baseColor.x, baseColor.y, baseColor.z);
 	}
+
+    // do not shade lights
+    // first hitpoint
+    bool dontShadeLights = true;
+    if(dontShadeLights)
+    {
+        if(ReturnPayload.Depth == 0)
+        {
+            if( dot(material.EmissiveFactor, material.EmissiveFactor) > 0)
+            {
+                Lo = material.EmissiveFactor;
+            }
+        }
+   }
 
     ReturnPayload.Radiance = Lo;
     ReturnPayload.Distance = length(posWorldSpace - gl_WorldRayOriginEXT);
